@@ -1,0 +1,987 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>茉莉运动 · 手机端</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+  <style>
+:root{
+  --bg:#f7f5ef;--bg2:#edeade;--card:#fff;
+  --jade:#0f3328;--jade2:#28604f;--jade-soft:#e2efe8;
+  --gold:#c99a3a;--gold2:#e7c877;--orange:#f4633f;
+  --muted:#757d77;--line:#e6e2d6;--ink:#17231f;
+  --ok:#1f7a4d;--err:#c04327;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  min-height:100vh;display:grid;place-items:center;padding:40px 20px;
+  background:
+    radial-gradient(900px 500px at 80% -10%, rgba(201,154,58,.14), transparent 60%),
+    radial-gradient(800px 500px at 5% 10%, rgba(40,96,79,.12), transparent 55%),
+    linear-gradient(160deg,#1c2b26 0%,#101d19 55%,#1a1508 100%);
+  font-family:"Segoe UI","PingFang SC","Microsoft YaHei",-apple-system,sans-serif;
+  color:var(--ink);-webkit-font-smoothing:antialiased;
+}
+.stage{display:flex;align-items:center;gap:64px;flex-wrap:wrap;justify-content:center}
+.stage-info{max-width:340px;color:#cfd8d2}
+.stage-info .eyebrow{font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:#8fa39a;font-weight:700}
+.stage-info h1{font-size:34px;margin:12px 0 14px;letter-spacing:-.03em;color:#f2efe4;font-weight:800}
+.stage-info p{font-size:13.5px;line-height:1.9;color:#9daba3}
+.stage-info .hint{margin-top:22px;font:600 12px "Cascadia Code",Consolas,monospace;color:var(--gold2);background:rgba(201,154,58,.12);border:1px solid rgba(201,154,58,.3);padding:10px 14px;border-radius:10px;display:inline-block}
+
+/* ── 手机外壳 ── */
+.phone{
+  position:relative;width:375px;height:760px;border-radius:54px;flex:0 0 auto;
+  background:linear-gradient(150deg,#3b4542,#141b18 60%,#2c3532);
+  padding:12px;box-shadow:0 40px 90px rgba(0,0,0,.6),0 0 0 1.5px rgba(255,255,255,.12),inset 0 1px 1px rgba(255,255,255,.25);
+}
+.phone::before{content:"";position:absolute;left:-3px;top:170px;width:3px;height:60px;border-radius:3px;background:#0d1210}
+.phone::after{content:"";position:absolute;right:-3px;top:220px;width:3px;height:90px;border-radius:3px;background:#0d1210}
+.screen{
+  position:relative;width:100%;height:100%;border-radius:44px;overflow:hidden;
+  background:linear-gradient(180deg,var(--bg),var(--bg2));
+  display:flex;flex-direction:column;
+}
+.notch{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:110px;height:28px;border-radius:16px;background:#0c110f;z-index:60}
+.notch::after{content:"";position:absolute;right:16px;top:9px;width:9px;height:9px;border-radius:50%;background:#1d2a26;box-shadow:inset 0 0 3px rgba(120,200,255,.35)}
+
+.statusbar{flex:0 0 auto;height:52px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 26px 6px;font:700 13px "Segoe UI",sans-serif;color:var(--jade)}
+.statusbar .sicons{display:flex;gap:5px;align-items:center;font-size:11px;letter-spacing:1px}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:#c9c4b2;display:inline-block;margin-right:4px;vertical-align:0}
+.conn-dot.on{background:#2e9b64;box-shadow:0 0 6px rgba(46,155,100,.7)}
+
+.views{flex:1;position:relative;overflow:hidden}
+.view{position:absolute;inset:0;overflow-y:auto;padding:18px 20px 26px;display:none;scrollbar-width:none;animation:view-in .28s ease}
+.view::-webkit-scrollbar{display:none}
+.view.on{display:block}
+@keyframes view-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.tabbar{
+  flex:0 0 auto;height:78px;display:flex;padding:8px 10px 22px;
+  background:rgba(255,255,255,.88);backdrop-filter:blur(14px);
+  border-top:1px solid rgba(0,0,0,.06);box-shadow:0 -8px 24px rgba(23,35,31,.06);
+}
+.tab{flex:1;border:0;background:transparent;display:grid;place-items:center;gap:3px;cursor:pointer;color:var(--muted);font:600 10.5px "Segoe UI",sans-serif;padding-top:4px}
+.tab svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s ease}
+.tab.on{color:var(--jade2)}
+.tab.on svg{transform:translateY(-1px) scale(1.08)}
+.tab.on::after{content:"";width:4px;height:4px;border-radius:50%;background:var(--gold);margin-top:-1px}
+
+.app-card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px;box-shadow:0 2px 10px rgba(23,35,31,.05);margin-bottom:14px}
+.v-label{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:5px;font:700 10.5px "Segoe UI",sans-serif;padding:4px 10px;border-radius:999px;background:var(--jade-soft);color:var(--jade2)}
+.pill.gold{background:var(--bg2);color:var(--muted)}
+.pill.ok{background:#e3f3e9;color:var(--ok)}
+.pill.err{background:#fdeee9;color:var(--err)}
+
+/* ── 登录页 ── */
+.v-login{display:none;flex-direction:column;justify-content:center;text-align:center}
+.v-login.on{display:flex}
+.app-logo{width:76px;height:76px;margin:0 auto 18px;border-radius:26px;display:grid;place-items:center;font-size:36px;color:#fff;background:var(--jade)}
+.v-login h2{font-size:24px;margin:0 0 6px;letter-spacing:-.02em}
+.v-login .sub{font-size:12.5px;color:var(--muted);margin:0 0 24px}
+.m-field{text-align:left;display:grid;gap:6px;margin-bottom:12px}
+.m-field input,.m-field select{width:100%;border:1.5px solid var(--line);background:#fbfaf5;border-radius:14px;padding:12px 15px;font:600 14px "Segoe UI",sans-serif;outline:0;color:var(--ink);transition:border-color .15s,box-shadow .15s;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+.m-field input:focus,.m-field select:focus{border-color:var(--jade2);box-shadow:0 0 0 3.5px rgba(40,96,79,.12);background:#fff}
+.dd{position:relative}
+.dd-btn{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;border:1.5px solid var(--line);background:#fbfaf5;border-radius:14px;padding:12px 15px;font:600 14px "Segoe UI",sans-serif;color:var(--ink);cursor:pointer;text-align:left}
+.dd-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dd-btn i{font-style:normal;color:var(--muted);font-size:12px;flex:0 0 auto}
+.dd-panel{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:40;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 32px rgba(23,35,31,.18);padding:8px}
+.dd-panel input{width:100%;border:1.5px solid var(--line);background:#fbfaf5;border-radius:10px;padding:9px 12px;font:600 13px "Segoe UI",sans-serif;outline:0;margin-bottom:6px;color:var(--ink)}
+.dd-panel input:focus{border-color:var(--jade2)}
+.dd-list{max-height:220px;overflow-y:auto;scrollbar-width:thin}
+.dd-item{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;border:0;background:transparent;border-radius:9px;padding:9px 11px;font:600 13px "Segoe UI",sans-serif;color:var(--ink);cursor:pointer;text-align:left}
+.dd-item:hover{background:var(--jade-soft)}
+.dd-item.on{background:var(--jade);color:#fff}
+.dd-item i{font-style:normal;font-size:11px;color:var(--muted);flex:0 0 auto}
+.dd-item.on i{color:rgba(255,255,255,.8)}
+.dd-empty{padding:14px;text-align:center;font-size:12px;color:var(--muted)}
+select[hidden]{display:none!important}
+.m-btn{width:100%;border:0;border-radius:14px;padding:13px;font:700 15px "Segoe UI",sans-serif;color:#fff;cursor:pointer;background:var(--jade2);transition:opacity .15s,transform .15s;margin-top:4px}
+.m-btn:active{transform:scale(.97)}
+.m-btn:disabled{opacity:.45;cursor:not-allowed}
+.m-btn.gold{background:transparent;color:var(--jade2);border:1.5px solid var(--jade2)}
+.m-btn.danger{background:transparent;color:var(--err);border:1.5px solid var(--err)}
+.m-btn.sm{width:auto;padding:9px 16px;font-size:12.5px;border-radius:11px;box-shadow:none}
+.m-err{min-height:18px;font-size:12px;color:var(--err);margin:8px 0 0;text-align:left}
+.v-login .foot-note{margin-top:14px;font-size:10.5px;color:var(--muted);line-height:1.7}
+
+/* ── 首页（跑步） ── */
+.greet{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.greet h3{font-size:19px;margin:0;letter-spacing:-.02em}
+.greet small{display:block;font-size:11.5px;color:var(--muted);margin-top:3px}
+.greet .avatar{width:42px;height:42px;border-radius:15px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:17px;background:var(--jade2)}
+.task-card{position:relative;overflow:hidden;background:var(--jade);color:#fff;border:0}
+.task-card .v-label{color:rgba(255,255,255,.65)}
+.task-card .t-num{font-size:15px;font-weight:700;margin:8px 0 10px}
+.task-card .t-num b{font-size:26px;font-weight:800}
+.progress{height:8px;border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden}
+.progress i{display:block;height:100%;border-radius:99px;background:var(--gold2);width:0;transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.task-meta{display:flex;justify-content:space-between;margin-top:10px;font-size:11px;color:rgba(255,255,255,.75)}
+.run-zone{display:flex;align-items:center;gap:12px}
+.ring{position:relative;width:118px;height:118px;flex:0 0 auto}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .track{stroke:#e8e4d6;fill:none;stroke-width:9}
+.ring .bar{stroke:var(--jade2);fill:none;stroke-width:9;stroke-linecap:round;stroke-dasharray:326;stroke-dashoffset:326;transition:stroke-dashoffset .5s ease}
+.ring .center{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.ring .center b{font:800 19px "Cascadia Code",Consolas,monospace;display:block}
+.ring .center span{font-size:10px;color:var(--muted)}
+.run-info{flex:1;min-width:0}
+.run-info .kv{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px dashed var(--line);color:var(--muted);gap:8px}
+.run-info .kv:last-child{border:0}
+.run-info .kv b{color:var(--ink);font:700 12px "Cascadia Code",Consolas,monospace;text-align:right}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.task-note{font-size:11.5px;color:var(--muted);line-height:1.6;margin:6px 2px 10px}
+.task-note.err{color:var(--err)}
+
+/* ── 记录页 ── */
+.rec-head{background:var(--jade);color:#fff;border:0;display:grid;grid-template-columns:1fr 1fr;text-align:center;padding:18px 10px}
+.rec-head b{display:block;font:800 24px "Cascadia Code",Consolas,monospace}
+.rec-head b i{font-style:normal;font-size:12px;font-weight:600;opacity:.7;margin-left:3px}
+.rec-head span{font-size:11px;opacity:.75;margin-top:4px;display:block}
+.mchips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 10px;scrollbar-width:none}
+.mchips::-webkit-scrollbar{display:none}
+.mchip{flex:0 0 auto;border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:6px 14px;font:700 12px "Segoe UI",sans-serif;color:var(--muted);cursor:pointer}
+.mchip.on{border-color:var(--jade2);background:var(--jade);color:#fff}
+.rec{display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid #f0ede2;cursor:pointer}
+.rec:last-child{border:0}
+.rec .ic{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;font-size:20px;flex:0 0 auto;background:var(--jade-soft);color:var(--jade2)}
+.rec .m{flex:1;min-width:0}
+.rec .m small{font-size:11px;color:var(--muted);display:block}
+.rec .m b{font-size:16px;display:block;margin:2px 0}
+.rec .m .ra{font-size:11.5px;color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stamp{flex:0 0 auto;display:inline-block;border:2.5px solid;border-radius:8px;padding:3px 9px;font:800 12px "Segoe UI",sans-serif;transform:rotate(-10deg);letter-spacing:.08em;position:relative}
+.stamp::before,.stamp::after{content:"★";font-size:7px;position:absolute;left:50%;transform:translateX(-50%)}
+.stamp::before{top:1px}.stamp::after{bottom:1px}
+.stamp.ok{color:#2e9b64;border-color:#2e9b64}
+.stamp.no{color:#d0454a;border-color:#d0454a}
+.month-sum{display:flex;justify-content:space-between;align-items:center;margin:4px 2px 6px;font-size:13px;font-weight:700}
+.month-sum span{font-family:"Cascadia Code",Consolas,monospace}
+
+/* ── 详情页 ── */
+#view-detail{z-index:70;background:var(--bg);padding:12px 16px 20px}
+.dt-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.dt-back{border:0;background:transparent;font-size:22px;cursor:pointer;color:var(--ink);padding:4px 10px}
+.dt-top h4{margin:0;font-size:16px}
+.dt-top .pill{visibility:hidden}
+.dt-hero{display:flex;justify-content:space-between;align-items:flex-end;margin:6px 2px 2px}
+.dt-hero .km{font:800 34px "Cascadia Code",Consolas,monospace;letter-spacing:-.02em}
+.dt-hero .km i{font-style:normal;font-size:13px;font-weight:600;color:var(--muted);margin-left:4px}
+.dt-hero .res{font-size:16px;font-weight:800}
+.dt-hero .res.ok{color:var(--jade2)}.dt-hero .res.no{color:var(--err)}
+.dt-time{font-size:11.5px;color:var(--muted);margin:2px 0 10px}
+.speed-bar{height:5px;border-radius:99px;background:linear-gradient(90deg,#2e9b64,#d8d34a,#f4633f);margin-bottom:4px}
+.speed-bar-lb{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-bottom:10px}
+.speed-bar-lb:first-of-type span:first-child{color:#2e9b64;font-weight:700}
+.dt-stats{display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;padding:12px 6px}
+.dt-stats>div{border-right:1px solid var(--line)}
+.dt-stats>div:last-child{border:0}
+.dt-stats b{display:block;font:800 17px "Cascadia Code",Consolas,monospace}
+.dt-stats span{font-size:11px;color:var(--muted)}
+.dt-msg{font-size:12px;color:var(--ok);margin:2px 2px 10px}
+.dt-msg.no{color:var(--err)}
+.dt-map{position:relative;height:300px;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#e9e7da}
+
+/* ── 设置页 ── */
+.set-row{display:grid;gap:5px;margin-bottom:13px}
+.set-row label{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.set-row input{width:100%;border:1.5px solid var(--line);background:#fbfaf5;border-radius:12px;padding:11px 13px;font:600 12.5px "Cascadia Code",Consolas,monospace;outline:0;color:var(--ink)}
+.set-row input:focus{border-color:var(--jade2);box-shadow:0 0 0 3px rgba(40,96,79,.12);background:#fff}
+.set-row small{font-size:10.5px;color:var(--muted)}
+.set-info{font:12px "Cascadia Code",Consolas,monospace;color:var(--muted);line-height:1.9;border-top:1px dashed var(--line);padding-top:10px;margin-top:4px;word-break:break-all}
+.set-info b{color:var(--jade)}
+.fthumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:4px 0 10px}
+.fthumb{position:relative;aspect-ratio:1;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.fthumb img{width:100%;height:100%;object-fit:cover;display:block}
+.fthumb .del{position:absolute;top:0;right:0;border:0;background:rgba(0,0,0,.55);color:#fff;font-size:11px;line-height:1;padding:3px 6px;border-radius:0 0 0 8px;cursor:pointer}
+.fthumb .idx{position:absolute;left:3px;bottom:3px;background:rgba(0,0,0,.5);color:#fff;font:700 9px "Cascadia Code",Consolas,monospace;padding:1px 5px;border-radius:6px}
+.set-hint{font-size:11.5px;line-height:1.7;color:var(--muted);background:var(--bg2);border-radius:10px;padding:9px 12px;margin-bottom:10px}
+.set-hint.warn{color:#8a6414;background:#fbf3df}
+.set-hint.err{color:var(--err);background:#fdeee9}
+
+/* ── 轨迹绘制 ── */
+#view-draw{z-index:65;background:var(--bg);padding:12px 16px 20px}
+.dr-map{position:relative;height:340px;border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#e9e7da;margin-bottom:10px}
+#dr-map-box{position:absolute;inset:0}
+.map-err{position:absolute;inset:0;display:grid;place-items:center;padding:0 20px;text-align:center;font-size:12.5px;line-height:1.8;color:var(--err);background:rgba(255,255,255,.92);z-index:9}
+.map-sat{position:absolute;right:10px;top:10px;z-index:6;border:1px solid var(--line);background:rgba(255,255,255,.92);border-radius:9px;padding:6px 12px;font:700 11px "Segoe UI",sans-serif;color:var(--jade2);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.map-sat:active{transform:scale(.95)}
+.dr-hud{position:absolute;left:10px;top:10px;background:rgba(255,255,255,.92);border-radius:10px;padding:6px 11px;font:700 11px "Segoe UI",sans-serif;color:var(--jade2);box-shadow:0 2px 8px rgba(0,0,0,.1);z-index:5}
+.dr-btns{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+.dr-btns .m-btn.sm{width:100%;padding:9px 2px;font-size:11.5px}
+
+/* ── App 模式 ── */
+body.app-mode{padding:0;display:block;background:#0f1512;overflow:hidden}
+.app-mode .stage-info{display:none}
+.app-mode .stage{display:block}
+.app-mode .phone{width:100vw;height:100vh;border-radius:0;padding:0;background:none;box-shadow:none}
+.app-mode .phone::before,.app-mode .phone::after{display:none}
+.app-mode .screen{border-radius:0}
+.app-mode .notch{display:none}
+.app-mode .statusbar{height:34px;padding-top:6px}
+  </style>
+</head>
+<body>
+<div class="stage">
+  <div class="stage-info">
+    <span class="eyebrow">MOLI SPORTS · MOBILE</span>
+    <h1>手机端</h1>
+    <p>茉莉运动 · 桌面版。运行：python moli.py</p>
+    <div class="hint">数据全部保存在本机</div>
+  </div>
+
+  <div class="phone">
+    <div class="screen">
+      <div class="notch"></div>
+      <div class="statusbar">
+        <span id="sys-clock">--:--</span>
+        <span class="sicons"><i class="conn-dot" id="conn-dot"></i><span id="conn-text">异常</span></span>
+      </div>
+
+      <div class="views">
+        <!-- 登录 -->
+        <div class="view v-login on" id="view-login">
+          <div class="app-logo">🌿</div>
+          <h2>茉莉运动</h2>
+          <p class="sub">云运动 个人版</p>
+          <div class="m-field"><input id="in-user" placeholder="学号" autocomplete="username"></div>
+          <div class="m-field"><input id="in-pass" type="password" placeholder="密码" autocomplete="current-password"></div>
+          <div class="m-field">
+            <div class="dd" id="school-dd">
+              <button type="button" class="dd-btn" id="school-btn"><span id="school-btn-label">加载学校列表…</span><i>▾</i></button>
+              <div class="dd-panel" id="school-panel" hidden>
+                <input id="school-search" placeholder="搜索学校名称或编码…" autocomplete="off">
+                <div class="dd-list" id="school-list"></div>
+              </div>
+            </div>
+          </div>
+          <button class="m-btn" id="btn-login">登 录</button>
+          <p class="m-err" id="login-err"></p>
+        </div>
+
+        <!-- 首页 -->
+        <div class="view" id="view-home">
+          <div class="greet">
+            <div><h3 id="run-hi">你好</h3><small id="run-sub">—</small></div>
+            <div class="avatar" id="run-avatar">—</div>
+          </div>
+
+          <div class="app-card task-card">
+            <span class="v-label">本学期任务</span>
+            <div class="t-num">已完成 <b id="st-qualified">—</b> / <span id="st-target">—</span> 次</div>
+            <div class="progress"><i id="task-bar"></i></div>
+            <div class="task-meta"><span id="st-mileage">累计 — km</span><span id="st-morning">晨跑 — 次</span></div>
+          </div>
+
+          <div class="app-card run-zone">
+            <div class="ring">
+              <svg viewBox="0 0 120 120">
+                <defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#28604f"/><stop offset="100%" stop-color="#c99a3a"/></linearGradient></defs>
+                <circle class="track" cx="60" cy="60" r="52"/>
+                <circle class="bar" id="run-ring" cx="60" cy="60" r="52"/>
+              </svg>
+              <div class="center"><div><b id="run-state">空闲</b><span id="run-state-sub">等待提交任务</span></div></div>
+            </div>
+            <div class="run-info">
+              <div class="kv"><span>跑区</span><b id="kv-area">—</b></div>
+              <div class="kv"><span>目标</span><b id="kv-target">—</b></div>
+              <div class="kv"><span>刷脸</span><b id="kv-face">—</b></div>
+              <div class="kv"><span>任务</span><b id="kv-task">—</b></div>
+            </div>
+          </div>
+
+          <div class="app-card" style="padding:14px 16px">
+            <div class="m-field" style="margin:0 0 10px">
+              <div class="dd" data-dd="sel-area"><button type="button" class="dd-btn"><span></span><i>▾</i></button><div class="dd-panel" hidden><div class="dd-list"></div></div></div>
+              <select id="sel-area" hidden><option value="—">选择跑区</option></select>
+            </div>
+            <div class="row2">
+              <div class="m-field" style="margin:0"><input id="in-dist" type="number" value="2000" min="1" max="4500" step="10" placeholder="距离(米)"></div>
+              <div class="m-field" style="margin:0">
+                <div class="dd" data-dd="sel-speed"><button type="button" class="dd-btn"><span></span><i>▾</i></button><div class="dd-panel" hidden><div class="dd-list"></div></div></div>
+                <select id="sel-speed" hidden><option value="slow">慢速</option><option value="fast">快速</option></select>
+              </div>
+            </div>
+          </div>
+
+          <button class="m-btn" id="btn-yunrun">开始跑步</button>
+          <p class="task-note" id="run-note">任务在本地后台执行，完成后自动刷新统计。</p>
+        </div>
+
+        <!-- 记录 -->
+        <div class="view" id="view-rec">
+          <div class="app-card rec-head">
+            <div><b id="rec-sumkm">—<i>km</i></b><span>累计跑量</span></div>
+            <div><b id="rec-sumnum">—</b><span>有效次数</span></div>
+          </div>
+          <div class="mchips" id="mchips"></div>
+          <div class="month-sum"><span id="ms-label">—</span><span id="ms-km">—</span></div>
+          <div class="app-card" id="rec-list" style="padding:4px 16px">
+            <div class="empty-tip">登录后查看真实记录</div>
+          </div>
+          <button class="m-btn gold sm" id="btn-refresh-rec" style="width:100%">刷新记录</button>
+        </div>
+
+        <!-- 设置 -->
+        <div class="view" id="view-set">
+          <div class="app-card">
+            <span class="v-label">人脸照片（提交时轮询携带）</span>
+            <div class="set-hint" id="face-hint">—</div>
+            <div class="fthumbs" id="fthumbs"></div>
+            <input type="file" id="in-faces" accept="image/*" multiple hidden>
+            <button class="m-btn sm" id="btn-add-face" style="width:100%">添加照片</button>
+          </div>
+          <div class="app-card">
+            <span class="v-label">跑区轨迹绘制</span>
+            <div class="set-info" id="draw-state" style="border:0;padding:6px 0 0">选择跑区后在地图上逐点绘制轨迹并保存</div>
+            <button class="m-btn sm gold" id="btn-open-draw" style="width:100%;margin-top:4px">进入绘制</button>
+          </div>
+          <div class="app-card">
+            <span class="v-label">地图与本地引擎</span>
+            <div class="set-row" style="margin-top:8px"><label>高德地图 Key</label><input id="set-amap-key" placeholder="Web端(JS API) Key"><small>仅存本机，用于详情轨迹与围栏绘制</small></div>
+            <div class="set-row"><label>安全密钥</label><input id="set-amap-sec" placeholder="securityJsCode（可选）"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px">
+              <button class="m-btn sm" id="btn-save-set">保存设置</button>
+              <button class="m-btn sm gold" id="btn-test">自检</button>
+            </div>
+            <div class="set-info" id="set-conn">未检测</div>
+          </div>
+          <div class="app-card">
+            <span class="v-label">账号</span>
+            <div class="set-info" id="set-account">未登录</div>
+            <button class="m-btn danger" id="btn-logout">退出登录并清除本机数据</button>
+          </div>
+        </div>
+
+        <!-- 轨迹绘制 -->
+        <div class="view" id="view-draw">
+          <div class="dt-top">
+            <button class="dt-back" id="btn-draw-back">‹</button>
+            <h4>轨迹绘制</h4>
+            <span class="pill" id="draw-found">未查询</span>
+          </div>
+          <div class="m-field">
+            <div class="dd" data-dd="dr-area"><button type="button" class="dd-btn"><span></span><i>▾</i></button><div class="dd-panel" hidden><div class="dd-list"></div></div></div>
+            <select id="dr-area" hidden><option value="—">选择跑区</option></select>
+          </div>
+          <div class="row2" style="margin-bottom:10px">
+            <div class="m-field" style="margin:0">
+              <div class="dd" data-dd="dr-type"><button type="button" class="dd-btn"><span></span><i>▾</i></button><div class="dd-panel" hidden><div class="dd-list"></div></div></div>
+              <select id="dr-type" hidden><option value="loop">环形（需闭合）</option><option value="out_and_back">折返（开放）</option></select>
+            </div>
+            <div class="m-field" style="margin:0"><input id="dr-name" placeholder="提交名称"></div>
+          </div>
+          <div class="dr-map">
+            <div id="dr-map-box"></div>
+            <button class="map-sat" id="btn-dr-sat" type="button">卫星</button>
+            <div class="dr-hud" id="dr-hud">点击「开始绘制」后，在地图上逐点点击</div>
+          </div>
+          <div class="dr-btns">
+            <button class="m-btn sm" id="btn-dr-start">开始绘制</button>
+            <button class="m-btn sm" id="btn-dr-undo">撤销</button>
+            <button class="m-btn sm" id="btn-dr-clear">清空</button>
+            <button class="m-btn sm gold" id="btn-dr-check">校验</button>
+          </div>
+          <button class="m-btn sm" id="btn-dr-save" disabled style="width:100%">保存轨迹（覆盖本地已存）</button>
+          <p class="task-note" id="dr-note">围栏与打卡点仅作参考；提交前会经本地校验（闭合与里程）。</p>
+        </div>
+
+        <!-- 详情 -->
+        <div class="view" id="view-detail">
+          <div class="dt-top">
+            <button class="dt-back" id="btn-dt-back">‹</button>
+            <h4>健跑详情</h4>
+            <span class="pill">—</span>
+          </div>
+          <div class="dt-hero"><span class="km" id="dt-km">—<i>公里</i></span><span class="res" id="dt-res">—</span></div>
+          <p class="dt-time" id="dt-start">—</p>
+          <div class="speed-bar"></div>
+          <div class="speed-bar-lb"><span>慢</span><span>快</span></div>
+          <div class="app-card dt-stats">
+            <div><b id="dt-pace">—</b><span>平均配速</span></div>
+            <div><b id="dt-dur">—</b><span>用时</span></div>
+            <div><b id="dt-cad">—</b><span>步频</span></div>
+          </div>
+          <p class="dt-msg" id="dt-msg"></p>
+          <div class="dt-map"><div id="dt-map-box" style="position:absolute;inset:0"></div><button class="map-sat" id="btn-dt-sat" type="button">卫星</button></div>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <button class="tab" data-v="home"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M6 10v10h12V10"/></svg>首页</button>
+        <button class="tab" data-v="rec"><svg viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M21 19H3"/></svg>记录</button>
+        <button class="tab" data-v="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1Z"/></svg>设置</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+if(location.search.indexOf('mode=app')>=0||location.hash==='#app')document.body.classList.add('app-mode');
+
+const $=id=>document.getElementById(id);
+const LS={session:'moli_mobile_session',acct:'moli_mobile_account',uuid:'moli_uuid',device:'moli_device_name',cfg:'moli_mobile_settings'};
+
+let cfg={};try{cfg=JSON.parse(localStorage.getItem(LS.cfg)||'{}')||{};}catch(e){}
+let session=null;try{session=JSON.parse(localStorage.getItem(LS.session)||'null');}catch(e){}
+let faceCount=0;
+let schools=[];let pollTimer=null;
+let dtMap=null,drMap=null;
+let dtOverlays=[],drFenceOverlays=[];
+let dtSat=null,drSat=null;
+let drPoints=[],drMarkers=[],drLine=null,drFence=[],drCps=[],drDrawing=false,drChecked=false;
+
+const bridgeApi=()=>(window.pywebview&&window.pywebview.api)?window.pywebview.api:null;
+async function call(name,args={}){
+  const b=bridgeApi();
+  if(!b)throw Error('应用未就绪，请重启');
+  if(typeof b[name]!=='function')throw Error('不支持的调用: '+name);
+  const r=await b[name](args);
+  if(r&&r.__error)throw Error(r.__error);
+  return r;
+}
+function saveSession(){localStorage.setItem(LS.session,JSON.stringify(session));}
+function clearSession(){localStorage.removeItem(LS.session);session=null;}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function sportBody(){return{school_code:session.school_code,uuid:session.uuid,device_name:session.device_name,token:session.token};}
+
+/* ── Tab 切换 ── */
+const views={login:'view-login',home:'view-home',rec:'view-rec',set:'view-set',draw:'view-draw',detail:'view-detail'};
+function show(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  $(views[name]).classList.add('on');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v===name));
+  if(name==='rec')loadRecords();
+  if(name==='set')fillSettings();
+  if(name==='draw')initDrawView();
+}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  if(!session&&t.dataset.v!=='set')return show('login');
+  show(t.dataset.v);
+}));
+
+/* ── 连接检测 ── */
+async function checkConn(){
+  try{
+    const d=await call('status');
+    $('conn-dot').classList.add('on');$('conn-text').textContent='正常';
+    $('set-conn').innerHTML=`本地服务正常 · 时间 <b>${d.server_time}</b>`;
+    return true;
+  }catch(e){
+    $('conn-dot').classList.remove('on');$('conn-text').textContent='异常';
+    $('set-conn').textContent='自检失败：'+e.message;
+    return false;
+  }
+}
+
+/* ── 高德 SDK ── */
+function mapErr(box,msg){const d=document.createElement('div');d.className='map-err';d.textContent=msg;box.appendChild(d);}
+function mapClear(box){box.querySelectorAll('.map-err').forEach(e=>e.remove());}
+async function loadAMap(){
+  if(window.AMap)return;
+  if(!cfg.amap_key)throw Error('请先在「设置」填入高德 Key');
+  if(cfg.amap_security)window._AMapSecurityConfig={securityJsCode:cfg.amap_security};
+  await new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://webapi.amap.com/maps?v=2.0&key='+encodeURIComponent(cfg.amap_key);
+    s.onload=res;s.onerror=()=>rej(Error('高德 SDK 加载失败'));
+    document.head.appendChild(s);
+  });
+}
+
+/* ── 登录（保存登录信息，重开自动刷新） ── */
+let selSchool=null;
+function setSchool(s){
+  selSchool=s;
+  $('school-btn-label').textContent=s.schoolName+' · '+s.schoolCode;
+  $('school-panel').hidden=true;
+  renderSchoolList();
+}
+function renderSchoolList(){
+  const f=($('school-search').value||'').trim().toLowerCase();
+  const list=schools.filter(s=>!f||String(s.schoolName).toLowerCase().includes(f)||String(s.schoolCode).includes(f));
+  $('school-list').innerHTML=list.map(s=>
+    `<button type="button" class="dd-item${selSchool&&selSchool.schoolCode===s.schoolCode?' on':''}" data-c="${esc(s.schoolCode)}">${esc(s.schoolName)}<i>${esc(s.schoolCode)}</i></button>`
+  ).join('')||'<div class="dd-empty">无匹配学校</div>';
+  $('school-list').querySelectorAll('.dd-item').forEach(b=>b.addEventListener('click',()=>{
+    const s=schools.find(x=>String(x.schoolCode)===b.dataset.c);
+    if(s)setSchool(s);
+  }));
+}
+$('school-btn').addEventListener('click',e=>{
+  e.stopPropagation();
+  const p=$('school-panel');
+  p.hidden=!p.hidden;
+  if(!p.hidden){renderSchoolList();$('school-search').focus();}
+});
+$('school-search').addEventListener('input',renderSchoolList);
+document.addEventListener('click',e=>{if(!$('school-dd').contains(e.target))$('school-panel').hidden=true;});
+
+/* ── 通用下拉：隐藏的原生 select 同步到自定义 dd ── */
+document.querySelectorAll('select[hidden]').forEach(sel=>{
+  const dd=document.querySelector('.dd[data-dd="'+sel.id+'"]');if(!dd)return;
+  const btn=dd.querySelector('.dd-btn'),panel=dd.querySelector('.dd-panel'),list=dd.querySelector('.dd-list'),label=btn.querySelector('span');
+  const sync=()=>{const o=sel.options[sel.selectedIndex];label.textContent=o?o.text:'请选择';};
+  const render=()=>{
+    list.innerHTML=[...sel.options].map((o,i)=>`<button type="button" class="dd-item${i===sel.selectedIndex?' on':''}" data-i="${i}">${esc(o.text)}</button>`).join('')||'<div class="dd-empty">暂无选项</div>';
+    list.querySelectorAll('.dd-item').forEach(b=>b.addEventListener('click',()=>{
+      sel.selectedIndex=Number(b.dataset.i);
+      sel.dispatchEvent(new Event('change',{bubbles:true}));
+      panel.hidden=true;sync();
+    }));
+  };
+  btn.addEventListener('click',e=>{e.stopPropagation();panel.hidden=!panel.hidden;if(!panel.hidden)render();});
+  document.addEventListener('click',e=>{if(!dd.contains(e.target))panel.hidden=true;});
+  new MutationObserver(sync).observe(sel,{childList:true});  // 选项被重新生成时同步按钮文字
+  sel.addEventListener('change',sync);
+  sync();
+});
+async function loadSchools(){
+  try{
+    const d=await call('schools');
+    schools=d.schools||[];
+    $('school-btn-label').textContent='选择学校（'+schools.length+' 所）';
+    const acct=JSON.parse(localStorage.getItem(LS.acct)||'null');
+    const code=(acct&&acct.school_code)||(session&&session.school_code)||'';
+    if(code){
+      const s=schools.find(x=>String(x.schoolCode)===String(code));
+      if(s){selSchool=s;$('school-btn-label').textContent=s.schoolName+' · '+s.schoolCode;}
+    }
+  }catch(e){
+    $('school-btn-label').textContent='学校加载失败';
+  }
+}
+async function doLogin(user,pass,school,saveAcct){
+  const payload={user,password:pass,school_code:school};
+  const su=localStorage.getItem(LS.uuid),sd=localStorage.getItem(LS.device);
+  if(su)payload.uuid=su;
+  if(sd)payload.device_name=sd;
+  const d=await call('login',payload);
+  if(d.uuid)localStorage.setItem(LS.uuid,d.uuid);
+  if(d.device_name)localStorage.setItem(LS.device,d.device_name);
+  session={...d,login_at:Date.now()};
+  saveSession();
+  if(saveAcct)localStorage.setItem(LS.acct,JSON.stringify({user,password:pass,school_code:school}));
+  applySession();
+  show('home');
+}
+$('btn-login').addEventListener('click',async()=>{
+  const err=$('login-err');err.textContent='';
+  const user=$('in-user').value.trim(),pass=$('in-pass').value,school=selSchool?selSchool.schoolCode:'';
+  if(!user||!pass)return err.textContent='请填写学号和密码';
+  if(!school)return err.textContent='请选择学校';
+  const btn=$('btn-login');btn.disabled=true;btn.textContent='登录中…';
+  try{await doLogin(user,pass,school,true);}
+  catch(e){err.textContent=e.message;}
+  finally{btn.disabled=false;btn.textContent='登 录';}
+});
+
+function applySession(){
+  if(!session)return;
+  const name=session.realName||session.nickName||session.studentId||session.user||'我';
+  $('run-hi').textContent='你好，'+name;
+  $('run-sub').textContent=[session.school,session.className].filter(Boolean).join(' · ')||'已登录';
+  $('run-avatar').textContent=name.slice(0,1);
+  $('set-account').innerHTML=`<b>${esc(name)}</b>（${esc(session.user||'')}）<br>学校编码 ${esc(session.school_code)} · 跑区 ${(session.run_areas||[]).length} 个`;
+  const areas=session.run_areas||[];
+  $('sel-area').innerHTML=areas.map((a,i)=>`<option value="${i}">${esc(a.raName||'跑区 '+(i+1))}</option>`).join('')||'<option value="—">无可用跑区</option>';
+  $('dr-area').innerHTML=$('sel-area').innerHTML;
+  if(areas.length)areaChanged();
+  updateFaceHint();
+  loadStats();
+}
+
+/* ── 统计 ── */
+async function loadStats(){
+  if(!session)return;
+  try{
+    const d=await call('sport_info',sportBody());
+    const st=d.stat||d.data||{};
+    const q=st.qualifiedCount??'—',tg=st.raTargetNum??'—';
+    $('st-qualified').textContent=q;$('st-target').textContent=tg;
+    $('st-mileage').textContent='累计 '+(st.totalMileage??st.distance??'—')+' km';
+    $('st-morning').textContent='晨跑 '+(st.morningQualifiedCount??'—')+' 次';
+    if(q!=='—'&&tg!=='—'&&+tg>0)$('task-bar').style.width=Math.min(q/tg*100,100)+'%';
+  }catch(e){/* 静默 */}
+}
+
+/* ── 跑步任务 ── */
+function areaChanged(){
+  const a=(session?.run_areas||[])[Number($('sel-area').value)];
+  if(!a)return;
+  $('kv-area').textContent=a.raName||'—';
+  $('kv-face').textContent=a.runFaceStatus==='Y'?'需要':'免';
+  const min=Number(a.raSingleMileageMin||2),max=Number(a.raSingleMileageMax||3);
+  $('kv-target').textContent=min+'~'+max+' km';
+  $('in-dist').placeholder='建议 '+(min*1000|0)+'~'+(max*1000|0)+' 米';
+}
+$('sel-area').addEventListener('change',areaChanged);
+
+$('btn-yunrun').addEventListener('click',async()=>{
+  if(!session)return;
+  const btn=$('btn-yunrun'),note=$('run-note');note.className='task-note';note.textContent='提交中…';
+  const a=(session.run_areas||[])[Number($('sel-area').value)];
+  if(!a){note.className='task-note err';note.textContent='请先选择跑区';return;}
+  if(a.runFaceStatus==='Y'&&!faceCount){note.className='task-note err';note.textContent='该跑区需要刷脸，请先在「设置」添加人脸照片。';return;}
+  const dist=Number($('in-dist').value);
+  if(!dist||dist<1||dist>4500){note.className='task-note err';note.textContent='目标距离需在 1~4500 米之间';return;}
+  btn.disabled=true;
+  try{
+    const body={user:session.user,school_code:session.school_code,uuid:session.uuid,device_name:session.device_name,
+      token:session.token,target_distance:dist,ra_name:a.raName,fast:$('sel-speed').value==='fast'};
+    if(faceCount){const f=await call('face_next');body.face_base64=f.data_base64;}
+    const d=await call('yun_run',body);
+    if(d.task_id){note.textContent='任务已创建：'+d.task_id;$('kv-task').textContent=d.task_id.slice(0,8)+'…';startPoll(d.task_id);}
+    else{note.textContent='完成：'+(d.result?.msg||JSON.stringify(d.result||d));$('run-state').textContent='完成';$('run-ring').style.strokeDashoffset='0';loadStats();}
+  }catch(e){note.className='task-note err';note.textContent=e.message;}
+  finally{if(!pollTimer)btn.disabled=false;}
+});
+function startPoll(taskId){
+  clearInterval(pollTimer);let ticks=0;
+  pollTimer=setInterval(async()=>{
+    ticks++;
+    try{
+      const t=await call('task',{task_id:taskId});
+      $('run-state').textContent=({pending:'排队',running:'进行中',done:'完成',failed:'失败'})[t.status]||t.status;
+      $('run-state-sub').textContent=t.status==='running'?'执行中…':(t.result||t.status);
+      $('run-ring').style.strokeDashoffset=String(326*(t.status==='running'?0.5:t.status==='done'?0:1));
+      if(t.status==='done'||t.status==='failed'){
+        clearInterval(pollTimer);pollTimer=null;
+        $('btn-yunrun').disabled=false;
+        $('run-note').className='task-note';$('run-note').textContent=t.result||'任务结束';
+        loadStats();
+      }
+    }catch(e){
+      if(ticks>3){clearInterval(pollTimer);pollTimer=null;$('btn-yunrun').disabled=false;}
+    }
+  },4000);
+}
+
+/* ── 记录页（have_yd_info → crsReocordInfoList） ── */
+let recMonths=[],recMonth=0;
+async function loadRecords(){
+  const box=$('rec-list');
+  if(!session){box.innerHTML='<div class="empty-tip">登录后查看真实记录</div>';return;}
+  box.innerHTML='<div class="empty-tip">加载中…</div>';$('mchips').innerHTML='';
+  try{
+    const d=await call('have_yd_info',sportBody());
+    const data=d.data||{};
+    $('rec-sumkm').innerHTML=esc(data.sumKm??'—')+'<i>km</i>';
+    $('rec-sumnum').textContent=data.sumNumber??'—';
+    recMonths=data.rank||[];
+    if(!recMonths.length){box.innerHTML='<div class="empty-tip">本学期暂无记录</div>';$('ms-label').textContent='—';$('ms-km').textContent='';return;}
+    if(recMonth>=recMonths.length)recMonth=0;
+    $('mchips').innerHTML=recMonths.map((m,i)=>`<button class="mchip${i===recMonth?' on':''}" data-m="${i}">${esc(m.year)}-${esc(m.month)}</button>`).join('');
+    document.querySelectorAll('.mchip').forEach(b=>b.addEventListener('click',()=>{recMonth=Number(b.dataset.m);renderMonth();}));
+    renderMonth();
+  }catch(e){box.innerHTML='<div class="empty-tip">加载失败：'+esc(e.message)+'</div>';}
+}
+function renderMonth(){
+  document.querySelectorAll('.mchip').forEach(b=>b.classList.toggle('on',Number(b.dataset.m)===recMonth));
+  const m=recMonths[recMonth]||{};
+  $('ms-label').textContent=(m.year||'')+'年'+(m.month||'')+'月';
+  $('ms-km').textContent=(m.monthKm??'—')+' km';
+  const list=m.rankList||[];
+  const box=$('rec-list');
+  if(!list.length){box.innerHTML='<div class="empty-tip">该月暂无记录</div>';return;}
+  box.innerHTML=list.map((r,i)=>{
+    const ok=r.isQualified==='1';
+    return `<div class="rec" data-r="${i}">
+      <div class="ic">🏃</div>
+      <div class="m"><small>${esc(r.endTime||r.recordEndTime||'')}</small><b>${esc(r.recordMileage??'—')} km</b><span class="ra">📋 ${esc(r.raName||'')}</span></div>
+      <span class="stamp ${ok?'ok':'no'}">${ok?'达 标':'不达标'}</span>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('.rec').forEach(el=>el.addEventListener('click',()=>openDetail(list[Number(el.dataset.r)])));
+}
+$('btn-refresh-rec').addEventListener('click',()=>{recMonth=0;loadRecords();});
+
+/* ── 详情页（run_record_detail + 高德轨迹） ── */
+async function openDetail(rec){
+  show('detail');
+  const ok=rec.isQualified==='1';
+  $('dt-km').innerHTML=esc(rec.recordMileage??'—')+'<i>公里</i>';
+  $('dt-res').textContent=ok?'成绩合格':'成绩不合格';
+  $('dt-res').className='res '+(ok?'ok':'no');
+  $('dt-start').textContent='—';$('dt-pace').textContent='—';$('dt-dur').textContent='—';$('dt-cad').textContent='—';
+  $('dt-msg').textContent='加载中…';$('dt-msg').className='dt-msg';
+  try{
+    const d=await call('run_record_detail',{...sportBody(),record_id:rec.id});
+    const r=d.data||{};
+    $('dt-start').textContent='开始时间: '+(r.recordStartTime||rec.recordEndTime||'');
+    $('dt-pace').textContent=(r.recodePace!=null?Number(r.recodePace).toFixed(2):'—')+"'";
+    $('dt-dur').textContent=fmtDur(r.duration??0);
+    $('dt-cad').textContent=r.recodeCadence??'—';
+    const clone=String(r.remake||'').split('|')[0];
+    $('dt-msg').textContent=ok?'您已完成本次健跑,请继续加油!':(clone&&clone!=='0'?'疑似克隆检测标记':'本次成绩未达标');
+    $('dt-msg').className='dt-msg'+(ok?'':' no');
+    renderDetailMap(r);
+  }catch(e){$('dt-msg').textContent='详情加载失败：'+e.message;$('dt-msg').className='dt-msg no';}
+}
+$('btn-dt-back').addEventListener('click',()=>show('rec'));
+function fmtDur(sec){
+  sec=Number(sec)||0;
+  const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+function speedColor(sp,min,max){
+  const t=max>min?Math.min(Math.max((sp-min)/(max-min),0),1):.5;
+  return `hsl(${Math.round(120*(1-t))},75%,45%)`;
+}
+async function renderDetailMap(r){
+  const box=$('dt-map-box');
+  try{await loadAMap();}catch(e){mapErr(box,e.message);return;}
+  mapClear(box);
+  if(!dtMap)dtMap=new AMap.Map('dt-map-box',{zoom:17,mapStyle:'amap://styles/light'});
+  if(dtOverlays.length){dtMap.remove(dtOverlays);dtOverlays=[];}
+  const pts=(r.pointsList||[]).map(p=>{const[lng,lat]=String(p.point).split(',').map(Number);return{lng,lat,sp:Number(p.speed)||0};}).filter(p=>Number.isFinite(p.lng)&&Number.isFinite(p.lat));
+  if(pts.length<2){mapErr(box,'该记录无 GPS 轨迹点');return;}
+  const sps=pts.map(p=>p.sp);const mn=Math.min(...sps),mx=Math.max(...sps);
+  const ov=[];
+  for(let i=1;i<pts.length;i++){
+    ov.push(new AMap.Polyline({path:[[pts[i-1].lng,pts[i-1].lat],[pts[i].lng,pts[i].lat]],strokeColor:speedColor(pts[i].sp,mn,mx),strokeWeight:5,lineJoin:'round',bubble:true}));
+  }
+  const first=pts[0],last=pts[pts.length-1];
+  const flag=(p,txt)=>new AMap.Marker({position:[p.lng,p.lat],content:`<div style="background:#16283a;color:#fff;font:700 11px sans-serif;padding:3px 7px;border-radius:6px">${txt}</div>`,offset:new AMap.Pixel(-12,-12),bubble:true});
+  ov.push(flag(first,'始'),flag(last,'终'));
+  (r.manageList||[]).forEach(m=>{
+    const[lng,lat]=String(m.point).split(',').map(Number);
+    if(!Number.isFinite(lng))return;
+    ov.push(new AMap.Marker({position:[lng,lat],content:'<div style="width:16px;height:16px;border-radius:50%;background:#2e9b64;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>',offset:new AMap.Pixel(-8,-8),bubble:true}));
+  });
+  dtMap.add(ov);dtOverlays.push(...ov);
+  dtMap.setFitView(ov,false,[40,40,40,40]);
+}
+
+/* ── 人脸照片 ── */
+function bindSat(btn,which){
+  $(btn).addEventListener('click',()=>{
+    const map=which==='dr'?drMap:dtMap;if(!map||!window.AMap)return;
+    if(which==='dr'){
+      if(drSat){drMap.remove(drSat);drSat=null;$(btn).textContent='卫星';}
+      else{drSat=new AMap.TileLayer.Satellite();drMap.add(drSat);$(btn).textContent='标准';}
+    }else{
+      if(dtSat){dtMap.remove(dtSat);dtSat=null;$(btn).textContent='卫星';}
+      else{dtSat=new AMap.TileLayer.Satellite();dtMap.add(dtSat);$(btn).textContent='标准';}
+    }
+  });
+}
+bindSat('btn-dr-sat','dr');bindSat('btn-dt-sat','dt');
+function updateFaceHint(){
+  const h=$('face-hint');
+  if(!session){h.className='set-hint';h.textContent='登录后根据跑区自动判断是否需要刷脸。';return;}
+  const need=(session.run_areas||[]).some(a=>a.runFaceStatus==='Y');
+  if(need){h.className='set-hint';h.textContent='当前账号存在需要刷脸的跑区，提交跑步时会按顺序轮询携带下方照片。';}
+  else{h.className='set-hint warn';h.textContent='提示：当前账号所有跑区均无需刷脸。仍可添加照片，提交时若学校要求人脸会自动轮询携带。';}
+}
+async function renderFaces(){
+  const box=$('fthumbs');
+  let photos=[];
+  try{photos=(await call('face_list')).photos||[];}catch(e){}
+  faceCount=photos.length;
+  if(!photos.length){box.innerHTML='<div style="grid-column:1/-1;font-size:12px;color:var(--muted);padding:6px 2px">暂无照片</div>';return;}
+  box.innerHTML=photos.map((ph,i)=>
+    `<div class="fthumb" data-n="${esc(ph.name)}"><img alt=""><button class="del" data-n="${esc(ph.name)}">✕</button><span class="idx">${i+1}</span></div>`
+  ).join('');
+  box.querySelectorAll('.fthumb').forEach(el=>{
+    const img=el.querySelector('img');
+    call('face_get',{name:el.dataset.n}).then(r=>{img.src='data:image/jpeg;base64,'+r.data_base64;}).catch(()=>{});
+  });
+  box.querySelectorAll('.del').forEach(b=>b.addEventListener('click',async()=>{
+    try{await call('face_delete',{name:b.dataset.n});}catch(e){}
+    renderFaces();
+  }));
+}
+/* 旧版 localStorage 照片迁移到 data/faces/ */
+async function migrateFaces(){
+  let old=[];try{old=JSON.parse(localStorage.getItem('moli_face_photos')||'[]')||[];}catch(e){}
+  if(!old.length)return;
+  for(const b64 of old){try{await call('face_add',{data_base64:b64});}catch(e){}}
+  localStorage.removeItem('moli_face_photos');localStorage.removeItem('moli_face_idx');
+}
+$('btn-add-face').addEventListener('click',()=>$('in-faces').click());
+$('in-faces').addEventListener('change',async e=>{
+  const files=[...e.target.files];e.target.value='';
+  if(!files.length)return;
+  const need=(session?.run_areas||[]).some(a=>a.runFaceStatus==='Y');
+  if(!need){$('face-hint').className='set-hint warn';$('face-hint').textContent='提示：当前账号跑区均不需要刷脸，照片仍会保存并在需要时携带。';}
+  for(const f of files){
+    try{await call('face_add',{data_base64:await compressImage(f,512,.85)});}catch(err){}
+  }
+  renderFaces();
+});
+function compressImage(file,maxSide,quality){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const sc=Math.min(1,maxSide/Math.max(img.width,img.height));
+      const c=document.createElement('canvas');
+      c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      res(c.toDataURL('image/jpeg',quality).split(',')[1]);
+    };
+    img.onerror=()=>rej(Error('图片读取失败'));
+    img.src=URL.createObjectURL(file);
+  });
+}
+
+/* ── 轨迹绘制 ── */
+$('btn-open-draw').addEventListener('click',()=>{
+  if(!session){show('login');return;}
+  show('draw');
+});
+$('btn-draw-back').addEventListener('click',()=>show('set'));
+async function initDrawView(){
+  const areas=session?.run_areas||[];
+  if(!$('dr-area').value&&areas.length)$('dr-area').value='0';
+  if(areas.length&&(!drMap||!drFenceLoaded()))await drawFence();
+  await queryTrack();
+}
+function drFenceLoaded(){return drFence.length>2||drCps.length>0;}
+$('dr-area').addEventListener('change',async()=>{drReset();await drawFence();await queryTrack();});
+async function drawFence(){
+  const a=(session?.run_areas||[])[Number($('dr-area').value)];
+  if(!a)return;
+  $('dr-name').value=a.raName||'';
+  const drBox=$('dr-map-box');
+  try{await loadAMap();}catch(e){mapErr(drBox,e.message);$('dr-hud').textContent='地图不可用';return;}
+  mapClear(drBox);
+  if(!drMap){drMap=new AMap.Map('dr-map-box',{zoom:17,mapStyle:'amap://styles/light'});drMap.on('click',onDrClick);}
+  if(drFenceOverlays.length){drMap.remove(drFenceOverlays);}
+  drFenceOverlays=[];drFence=[];drCps=[];
+  const parse=s=>String(s||'').split('|').map(v=>{const[lng,lat]=v.split(',').map(Number);return[lng,lat];}).filter(p=>Number.isFinite(p[0])&&Number.isFinite(p[1]));
+  drFence=parse(a.fence);drCps=parse(a.points);
+  if(drFence.length>2)drFenceOverlays.push(new AMap.Polygon({path:drFence,strokeColor:'#28604f',strokeWeight:2,strokeStyle:'dashed',fillColor:'#28604f',fillOpacity:.08,bubble:true}));
+  drCps.forEach((p,i)=>drFenceOverlays.push(new AMap.Marker({position:p,content:`<div style="width:20px;height:20px;border-radius:50%;background:#c99a3a;color:#fff;font:700 10px sans-serif;display:grid;place-items:center;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.3)">${i+1}</div>`,offset:new AMap.Pixel(-10,-10),bubble:true})));
+  drMap.add(drFenceOverlays);
+  if(drFence.length||drCps.length)drMap.setFitView(drFenceOverlays,false,[30,30,30,30]);
+}
+async function queryTrack(){
+  const a=(session?.run_areas||[])[Number($('dr-area').value)];if(!a)return;
+  try{
+    const q=await call('track_query',{school_code:session.school_code,ra_name:a.raName||''});
+    $('draw-found').textContent=q.found?'已有轨迹':'暂无轨迹';
+    $('draw-found').className='pill '+(q.found?'ok':'gold');
+    $('draw-state').textContent=q.found?('该跑区已有轨迹：'+(q.file||'')):'该跑区暂无轨迹，可进入绘制';
+    if(q.found&&Array.isArray(q.points)&&q.points.length&&!drPoints.length){
+      q.points.forEach(p=>addDrPoint(Number(p[0]),Number(p[1])));
+      $('dr-hud').textContent='已载入本地轨迹 '+drPoints.length+' 个点（清空重画或直接覆盖保存）';
+      $('dr-hud').scrollIntoView({block:'nearest'});
+    }
+  }catch(e){$('draw-found').textContent='未查询';}
+}
+function addDrPoint(lng,lat){
+  if(!drMap)return;
+  drPoints.push([lng,lat]);
+  const m=new AMap.Marker({position:[lng,lat],content:'<div style="width:10px;height:10px;border-radius:50%;background:#f4633f;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>',offset:new AMap.Pixel(-5,-5)});
+  drMarkers.push(m);drMap.add(m);
+  if(drLine)drLine.setPath(drPoints);else{drLine=new AMap.Polyline({path:drPoints,strokeColor:'#f4633f',strokeWeight:4,bubble:true});drMap.add(drLine);}
+  drChecked=false;$('btn-dr-save').disabled=true;
+  $('dr-hud').textContent=drPoints.length+' 个点';
+}
+function onDrClick(ev){
+  if(!drDrawing)return;
+  const ll=ev&&ev.lnglat;if(!ll)return;
+  const lng=ll.getLng?ll.getLng():ll.lng,lat=ll.getLat?ll.getLat():ll.lat;
+  if(!Number.isFinite(lng)||!Number.isFinite(lat))return;
+  addDrPoint(lng,lat);
+}
+$('btn-dr-start').addEventListener('click',()=>{
+  drDrawing=!drDrawing;
+  $('btn-dr-start').textContent=drDrawing?'停止绘制':'开始绘制';
+  $('dr-hud').textContent=drDrawing?'地图点击添加轨迹点':'绘制已暂停';
+});
+$('btn-dr-undo').addEventListener('click',()=>{
+  drPoints.pop();const m=drMarkers.pop();if(m)drMap.remove(m);
+  if(drLine)drLine.setPath(drPoints);
+  drChecked=false;$('btn-dr-save').disabled=true;$('dr-hud').textContent=drPoints.length+' 个点';
+});
+function drReset(){
+  if(drMap){
+    if(drMarkers.length)drMap.remove(drMarkers);
+    if(drLine)drMap.remove(drLine);
+  }
+  drPoints=[];drMarkers=[];drLine=null;drDrawing=false;drChecked=false;
+  $('btn-dr-start').textContent='开始绘制';$('btn-dr-save').disabled=true;
+  $('dr-hud').textContent='点击「开始绘制」后，在地图上逐点点击';
+}
+$('btn-dr-clear').addEventListener('click',()=>{drReset();drawFence();});
+function drBody(){
+  const idx=Number($('dr-area').value);
+  return{run_area_index:idx,route_type:$('dr-type').value,
+    points:drPoints.map(p=>({lng:p[0],lat:p[1]}))};
+}
+$('btn-dr-check').addEventListener('click',async()=>{
+  const note=$('dr-note');note.className='task-note';
+  if(!session){note.className='task-note err';note.textContent='请先登录';return;}
+  if(drPoints.length<2){note.className='task-note err';note.textContent='至少需要 2 个点';return;}
+  try{
+    const d=await call('validate',drBody());
+    note.textContent=`校验通过：${d.distance_m} 米（${d.points.length} 个点）· 跑区要求 ${d.area?.raSingleMileageMin??'?'}~${d.area?.raSingleMileageMax??'?'} km`;
+    drChecked=true;$('btn-dr-save').disabled=false;
+  }catch(e){note.className='task-note err';note.textContent=e.message;drChecked=false;$('btn-dr-save').disabled=true;}
+});
+$('btn-dr-save').addEventListener('click',async()=>{
+  const note=$('dr-note');
+  const name=$('dr-name').value.trim();
+  if(!name){note.className='task-note err';note.textContent='请填写提交名称';return;}
+  try{
+    const d=await call('upload',{...drBody(),name});
+    note.className='task-note';note.textContent=`保存成功：${d.name} · ${d.distance_m} 米`;
+    queryTrack();
+  }catch(e){note.className='task-note err';note.textContent=e.message;}
+});
+
+/* ── 设置 ── */
+function fillSettings(){
+  $('set-amap-key').value=cfg.amap_key||'';
+  $('set-amap-sec').value=cfg.amap_security||'';
+  renderFaces();updateFaceHint();
+  if(session)$('set-account').innerHTML=`<b>${esc(session.realName||session.user)}</b>（${esc(session.user)}）<br>学校编码 ${esc(session.school_code)} · 跑区 ${(session.run_areas||[]).length} 个`;
+  else $('set-account').textContent='未登录';
+}
+$('btn-save-set').addEventListener('click',async()=>{
+  cfg={amap_key:$('set-amap-key').value.trim(),amap_security:$('set-amap-sec').value.trim()};
+  localStorage.setItem(LS.cfg,JSON.stringify(cfg));
+  if(dtMap){dtMap.destroy();dtMap=null;dtSat=null;}
+  if(drMap){drMap.destroy();drMap=null;drSat=null;drReset();}
+  const b=$('btn-save-set');b.textContent='已保存 ✓';setTimeout(()=>b.textContent='保存设置',1200);
+  checkConn();
+});
+$('btn-test').addEventListener('click',checkConn);
+$('btn-logout').addEventListener('click',()=>{
+  clearSession();localStorage.removeItem(LS.acct);location.reload();
+});
+
+/* ── 时钟 ── */
+function clock(){const d=new Date();$('sys-clock').textContent=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
+clock();setInterval(clock,20000);
+
+/* ── 启动：自动登录刷新 ── */
+async function init(){
+  await checkConn();
+  await migrateFaces();
+  await loadSchools();
+  const acct=JSON.parse(localStorage.getItem(LS.acct)||'null');
+  if(acct&&acct.user&&acct.password){
+    $('in-user').value=acct.user;$('in-pass').value=acct.password;
+    $('login-err').textContent='正在自动登录…';
+    try{await doLogin(acct.user,acct.password,acct.school_code,false);return;}
+    catch(e){$('login-err').textContent='自动登录失败：'+e.message;}
+  }else if(session){
+    applySession();show('home');
+  }
+}
+function boot(){if(window.__moliBooted)return;window.__moliBooted=1;init();}
+document.addEventListener('pywebviewready',boot);
+if(bridgeApi())boot();
+else setTimeout(boot,6000);  // 兜底
+})();
+</script>
+</body>
+</html>
