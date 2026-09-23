@@ -25,6 +25,13 @@ python moli.py
 
 需要 Python 3.10+、Windows。
 
+不想开界面也可以直接用命令行：
+
+```bash
+python cli.py login --user <学号>
+python cli.py run --distance 1200 --fast
+```
+
 ## 功能
 
 - 📱 桌面端手机界面（PyQt6），登录信息本机保存、重开自动登录
@@ -49,7 +56,8 @@ A：本项目不讨论、也不保证任何规避检测的能力，请自行评�
 ## 目录结构
 
 ```
-moli.py            入口
+moli.py            入口（GUI）
+cli.py             命令行入口（无 GUI，直接调用业务层）
 bridge.py          JS ↔ Python 调用层
 api.py             会话与轨迹校验
 services.py        业务服务层
@@ -63,9 +71,13 @@ static/index.html  UI 页面（QWebEngineView 承载，bridge.py 负责 JS ↔ P
 逆向自 APK 公开网络协议，仍在持续优化中：
 
 - [x] Nuitka 打包 + Inno Setup 安装包
+- [x] 上游接口经真机反编译逐端点核对
+- [ ] 刷脸跑步实测（无测试账号，逻辑已对齐反编译行为）
 - [ ] 轨迹生成算法拟真度调优
 - [ ] 更多学校实测
 - [ ] 清理 AI 辅助生成代码中的冗余（欢迎 PR）
+
+欢迎 PR 与 Issue。
 
 ## 相关项目
 
@@ -77,5 +89,3 @@ static/index.html  UI 页面（QWebEngineView 承载，bridge.py 负责 JS ↔ P
 相关接口、数据与服务归平台及学校所有。请勿用于任何商业用途、
 代跑作弊或其他违反校规校纪与法律法规的行为，由此产生的后果与作者无关。
 使用即代表你已阅读并同意以上条款。
-
-欢迎 PR 与 Issue。
