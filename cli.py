@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
-"""命令行入口：直接调用业务层，无需 GUI。
+"""命令行入口
 
 用法：
     python cli.py schools [--find 关键词]
     python cli.py login --user <学号> [--school-code 106]
+    python cli.py login --user <学号> --token <t> --uuid <64hex> --device-name "vivo(..)"   # 接管已有会话
     python cli.py run --distance 1200 [--ra-name 名称] [--fast] [--face auto|照片.jpg]
     python cli.py records
 
-登录态（token/uuid/device_name 等）保存在 data/cli_session.json。
+登录态（token/uuid/device_name 等）保存在 data/cli_session.json
 """
 from __future__ import annotations
 
@@ -48,6 +49,7 @@ def require_session() -> dict:
     return s
 
 
+
 def next_face_file() -> Path:
     """从 data/faces 轮询取下一张照片。"""
     files = sorted(FACES_DIR.glob("*.jpg"), key=lambda x: x.name)
@@ -79,13 +81,37 @@ async def cmd_schools(args) -> None:
 
 
 async def cmd_login(args) -> None:
+    # 接管已有会话（如真机抓到的 token/uuid/deviceName），不走登录接口
+    if args.token:
+        if not args.uuid or not args.device_name:
+            raise AppError("--token 模式必须同时提供 --uuid 与 --device-name")
+        session = {
+            "user": args.user, "school_code": args.school_code,
+            "uuid": args.uuid, "device_name": args.device_name,
+            "token": args.token.strip(),
+        }
+        try:
+            url = await services.resolve_school_url(args.school_code)
+            areas = await services.get_home_run_info(
+                school_url=url, uuid=session["uuid"],
+                device_name=session["device_name"], token=session["token"],
+            ) or []
+            session["run_areas"] = [a.get("raName", "") for a in areas]
+        except Exception as e:
+            print(f"提示: 跑区预取失败（不影响保存）: {e}")
+            session["run_areas"] = []
+        save_session(session)
+        print("已接管会话:", session["device_name"], session["uuid"][:16] + "…")
+        print("跑区:", "、".join(n for n in session["run_areas"] if n) or "（未获取到）")
+        return
+
     old = load_session()
     data = await api.login(api.LoginRequest(
         user=args.user,
         password=args.password,
         school_code=args.school_code,
-        uuid=old.get("uuid"),            # 沿用原设备，避免频繁换设备
-        device_name=old.get("device_name"),
+        uuid=args.uuid or old.get("uuid"),      # 指定或沿用原设备，避免频繁换设备
+        device_name=args.device_name or old.get("device_name"),
     ))
     session = {k: data[k] for k in ("user", "school_code", "uuid", "device_name", "token")}
     session["run_areas"] = [a.get("raName", "") for a in data.get("run_areas") or []]
@@ -158,10 +184,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--find", default="", help="按学校名称或编码过滤")
     p.set_defaults(func=cmd_schools)
 
-    p = sub.add_parser("login", help="登录并保存本机登录态")
+    p = sub.add_parser("login", help="登录并保存本机登录态；带 --token 则接管已有会话")
     p.add_argument("--user", required=True, help="学号")
     p.add_argument("--password", help="密码（不传则交互式输入）")
     p.add_argument("--school-code", default="106")
+    p.add_argument("--uuid", default="", help="指定设备号（64hex），或配合 --token 接管会话")
+    p.add_argument("--device-name", default="", help='指定设备名，如 "vivo(V2366GA)"')
+    p.add_argument("--token", default="", help="已有 token（接管模式，需同时给 --uuid/--device-name）")
     p.set_defaults(func=cmd_login)
 
     p = sub.add_parser("run", help="提交一次跑步")
@@ -191,8 +220,10 @@ def main() -> None:
         if stream.encoding and stream.encoding.lower().replace("-", "") != "utf8":
             stream.reconfigure(encoding="utf-8")
     args = build_parser().parse_args()
-    if args.command == "login" and not args.password:
+    if args.command == "login" and not args.password and not getattr(args, "token", ""):
         args.password = getpass.getpass("密码: ")
+
+    # 控制台只留警告以上，完整日志仍在 logs/app.log
     for handler in logging.getLogger().handlers:
         if not isinstance(handler, logging.FileHandler):
             handler.setLevel(logging.WARNING)
