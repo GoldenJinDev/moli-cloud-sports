@@ -349,7 +349,7 @@ async def run_start(
         k: info.get(k)
         for k in (
             "id", "recordStartTime", "ip", "warnContent", "raId",
-            "faceTime", "randomList",  # 刷脸跑时下发:识别时长 + 抽查时间点(秒)
+            "faceTime", "randomList",  # 刷脸跑时下发:识别时长(s) + 抽查点(公里数)
         )
     }
 
@@ -455,6 +455,7 @@ def build_finish_from_batches(
     ra_id: str,
     card_points: Optional[list[str]] = None,
     ra_dislikes: int = 0,
+    app_no_qualified_reason: Optional[str] = None,
 ) -> dict:
     all_card_points = [p for batch in batches for p in batch["cardPointList"]]
     last = all_card_points[-1]
@@ -483,7 +484,7 @@ def build_finish_from_batches(
             {"point": pt, "marked": "Y", "index": str(i)}
             for i, pt in enumerate(selected)
         ]
-    return {
+    payload = {
         "manageList": manage_list,
         "recordMileage": f"{total_km:.2f}",
         "recodeCadence": str(cadence),
@@ -502,6 +503,9 @@ def build_finish_from_batches(
         "recordStartTime": record_start_time,
         "remake": "0|{}",
     }
+    if app_no_qualified_reason:  # 人脸抽查失败时真机会立即 finish 并携带该字段
+        payload["appNoQualifiedReason"] = app_no_qualified_reason
+    return payload
 
 
 
@@ -597,27 +601,59 @@ async def yun_run(
         start_epoch_s=start_epoch,
     )
 
+    # randomList 抽查点为公里数，累计里程越过时触发（真机 SportRunMapActivity.W1 判断 window*1000 与米数）
     pending_checks = sorted(float(t) for t in random_list) if random_list else []
     check_idx = 0
     total = len(generate_run_data_list)
+
+    async def finalize(batches: list[RunSplitPayload], reason: Optional[str]) -> dict:
+        manage_point = json.dumps(
+            build_finish_from_batches(
+                batches=batches,
+                ra_id=ra_id,
+                ra_run_area=ra_run_area,
+                device_name=device_name,
+                ra_type=ra_type,
+                record_id=record_id,
+                record_start_time=record_start_time,
+                card_points=card_points,
+                ra_dislikes=ra_dislikes,
+                app_no_qualified_reason=reason,
+            ),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        await is_standard(
+            school_url=school_url, uuid=uuid, token=token,
+            device_name=device_name, generate_data=manage_point,
+        )
+        msg = await finish(
+            school_url=school_url, token=token, generate_data=manage_point,
+            uuid=uuid, device_name=device_name,
+        )
+        return {"msg": msg, "start_time": record_start_time}
+
     for i, y_point in enumerate(generate_run_data_list, start=1):
         sleep_sec = 0.05 if fast else int(y_point["times"])
         await asyncio.sleep(sleep_sec)
-        cum_time = float(y_point["cardPointList"][-1]["runTime"])
+        cum_mileage_m = float(y_point["cardPointList"][-1]["runMileage"])
         while (
             face_data is not None
             and check_idx < len(pending_checks)
-            and cum_time >= pending_checks[check_idx]
+            and cum_mileage_m >= pending_checks[check_idx] * 1000
         ):
             res = await face_run_compare_face(
                 school_url=school_url, uuid=uuid, token=token,
                 face_base_data=face_data, record_id=record_id, device_name=device_name,
             )
             if not res or res.get("data", {}).get("status") != "Y":
-                raise ValueError(
-                    f"人脸比对失败(抽查点 {pending_checks[check_idx]}s): "
-                    f"{res and res.get('msg')}"
-                )
+                # 真机行为：比对失败立即以已提交里程 finish 并带失败原因，而非弃跑
+                reason = f"人脸识别对比失败(抽查点 {pending_checks[check_idx]}km)"
+                logger.warning("[yun_run] %s msg=%s", reason, res and res.get("msg"))
+                sent = generate_run_data_list[: i - 1]
+                if not sent:
+                    raise ValueError(f"{reason}，且里程不足无法提交")
+                return await finalize(sent, reason)
             check_idx += 1
 
         await split_point_cheating(
@@ -626,30 +662,7 @@ async def yun_run(
         )
 
         if i == total:
-            manage_point = json.dumps(
-                build_finish_from_batches(
-                    batches=generate_run_data_list,
-                    ra_id=ra_id,
-                    ra_run_area=ra_run_area,
-                    device_name=device_name,
-                    ra_type=ra_type,
-                    record_id=record_id,
-                    record_start_time=record_start_time,
-                    card_points=card_points,
-                    ra_dislikes=ra_dislikes,
-                ),
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
-            await is_standard(
-                school_url=school_url, uuid=uuid, token=token,
-                device_name=device_name, generate_data=manage_point,
-            )
-            msg = await finish(
-                school_url=school_url, token=token, generate_data=manage_point,
-                uuid=uuid, device_name=device_name,
-            )
-            return {"msg": msg, "start_time": record_start_time}
+            return await finalize(generate_run_data_list, None)
     return None
 
 async def have_yd_info(school_url: str, token: str, uuid: str, device_name: str):
