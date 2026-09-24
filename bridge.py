@@ -11,6 +11,7 @@ from pathlib import Path
 
 import api
 import services
+import takeover
 from services import AppError
 
 FACES_DIR = Path(__file__).resolve().parent / "data" / "faces"
@@ -137,9 +138,34 @@ class Bridge:
             return self._err(f"参数错误: {e}")
         return self._call(api.upload(req))
 
+    def resume(self, payload=None):
+        p = self._payload(payload)
+        return self._call(api.resume(str(p.get("school_code", "")), p.get("run_areas") or []))
+
     def track_query(self, payload=None):
         p = self._payload(payload)
         return self._call(api.track_query(str(p.get("school_code", "")), str(p.get("ra_name", ""))))
+
+    def track_status(self, payload=None):
+        p = self._payload(payload)
+        names = p.get("ra_names") or []
+        if not isinstance(names, list):
+            return self._err("ra_names 必须是数组")
+        return self._call(api.track_status(str(p.get("school_code", "")), [str(n) for n in names]))
+
+    # ── 同设备登录：从自己的安卓真机接管会话 ──
+    def takeover_start(self, payload=None):
+        p = self._payload(payload)
+        return takeover.start(bool(p.get("clear_log", True)))
+
+    def takeover_poll(self, payload=None):
+        return takeover.poll()
+
+    def takeover_cancel(self, payload=None):
+        return takeover.cancel()
+
+    def takeover_install_adb(self, payload=None):
+        return takeover.install_adb()
 
     # ── 人脸照片（data/faces/*.jpg 真实文件，轮询游标存 data/faces/.cursor） ──
     @staticmethod
