@@ -6,6 +6,15 @@
 可能存在冗余，欢迎指出。理论上支持所有使用云运动平台的学校（学校列表取自官方公开接口），
 但未在全部学校实测，若你的学校不可用，欢迎提 Issue。
 
+## 界面预览
+
+软件 UI 界面效果如下：
+
+<p align="center">
+  <img src="image/ui1.png" width="45%">
+  <img src="image/ui2.png" width="45%">
+</p>
+
 ## 下载安装（普通用户）
 
 1. 到 [Releases](https://github.com/GoldenJinDev/moli-cloud-sports/releases) 下载发行包 `moli-v1.0.zip`
