@@ -3,3 +3,4 @@ gmssl>=3.2
 pydantic>=2.0
 geographiclib>=1.52
 PyQt6>=6.6
+PyQt6-WebEngine>=6.6
