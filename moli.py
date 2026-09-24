@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QFile, QIODevice, QUrl, QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -36,6 +37,8 @@ new QWebChannel(qt.webChannelTransport, function(channel){
       });
     };
   });
+  window.pywebview.openUrl = function(url){ api.open_url(String(url || '')); };
+  window.pywebview.copyText = function(text){ api.copy_text(String(text || '')); };
   document.dispatchEvent(new Event('pywebviewready'));
 });
 """
@@ -68,12 +71,16 @@ class _Task(QRunnable):
 
 class Api(QObject):
     js_ready = pyqtSignal(str)
+    open_url_requested = pyqtSignal(str)
+    copy_text_requested = pyqtSignal(str)
 
     def __init__(self, page: QWebEnginePage, bridge: Bridge):
         super().__init__()
         self._page = page
         self._bridge = bridge
         self.js_ready.connect(self._run_js)  # 跨线程 → 自动排队到 GUI 线程
+        self.open_url_requested.connect(self._open_url)
+        self.copy_text_requested.connect(self._copy_text)
 
     @pyqtSlot(str, int, str)
     def invoke(self, name: str, call_id: int, payload_json: str):
@@ -82,6 +89,21 @@ class Api(QObject):
         except Exception:
             payload = None
         QThreadPool.globalInstance().start(_Task(self, name, call_id, payload))
+
+    @pyqtSlot(str)
+    def open_url(self, url: str):
+        self.open_url_requested.emit(url)
+
+    @pyqtSlot(str)
+    def copy_text(self, text: str):
+        self.copy_text_requested.emit(text)
+
+    def _open_url(self, url: str):
+        if url.startswith(("http://", "https://")):
+            QDesktopServices.openUrl(QUrl(url))
+
+    def _copy_text(self, text: str):
+        QApplication.clipboard().setText(text)
 
     def dispatch(self, name: str, call_id: int, payload):
         try:
