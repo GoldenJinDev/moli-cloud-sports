@@ -1,0 +1,35 @@
+# 本机数据（账号/人脸照片/轨迹/高德Key，绝不入库）
+data/
+
+# 环境变量（含密钥，不入库）
+.env
+.env.example
+
+# 日志
+logs/
+*.log
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 打包产物
+build/
+dist/
+*.spec
+
+# 一键运行.bat 生成的本机环境与下载缓存
+.venv/
+.tmp/
+python-*/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 调试日志存档（含明文敏感信息，绝不入库）
+devinfo_logs/
+
+# adb（真机接管时自动下载解压到本目录）
+platform-tools/
