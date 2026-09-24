@@ -81,44 +81,39 @@ async def cmd_schools(args) -> None:
 
 
 async def cmd_login(args) -> None:
-    # 接管已有会话（如真机抓到的 token/uuid/deviceName），不走登录接口
+    # 接管已有会话（如真机调试日志里拿到的 token/uuid/deviceName），不走登录接口
     if args.token:
         if not args.uuid or not args.device_name:
             raise AppError("--token 模式必须同时提供 --uuid 与 --device-name")
-        session = {
-            "user": args.user, "school_code": args.school_code,
-            "uuid": args.uuid, "device_name": args.device_name,
-            "token": args.token.strip(),
-        }
-        try:
-            url = await services.resolve_school_url(args.school_code)
-            areas = await services.get_home_run_info(
-                school_url=url, uuid=session["uuid"],
-                device_name=session["device_name"], token=session["token"],
-            ) or []
-            session["run_areas"] = [a.get("raName", "") for a in areas]
-        except Exception as e:
-            print(f"提示: 跑区预取失败（不影响保存）: {e}")
-            session["run_areas"] = []
-        save_session(session)
-        print("已接管会话:", session["device_name"], session["uuid"][:16] + "…")
-        print("跑区:", "、".join(n for n in session["run_areas"] if n) or "（未获取到）")
-        return
+        data = await api.login(api.LoginRequest(
+            user=args.user, school_code=args.school_code,
+            token=args.token, uuid=args.uuid, device_name=args.device_name,
+        ))
+        _save_from_login(data)
+        print(f"已接管会话: {data['device_name']} {data['uuid'][:16]}…")
+    else:
+        old = load_session()
+        data = await api.login(api.LoginRequest(
+            user=args.user,
+            password=args.password,
+            school_code=args.school_code,
+            uuid=args.uuid or old.get("uuid"),      # 指定或沿用原设备，避免频繁换设备
+            device_name=args.device_name or old.get("device_name"),
+        ))
+        _save_from_login(data)
+        print(f"登录成功: {data.get('realName') or args.user} @ {data.get('school', '')}")
+        print(f"设备: {data['device_name']}  学校编码: {data['school_code']}")
+    print("跑区:", "、".join(n for n in _area_names(data)) or "（未获取到）")
 
-    old = load_session()
-    data = await api.login(api.LoginRequest(
-        user=args.user,
-        password=args.password,
-        school_code=args.school_code,
-        uuid=args.uuid or old.get("uuid"),      # 指定或沿用原设备，避免频繁换设备
-        device_name=args.device_name or old.get("device_name"),
-    ))
+
+def _area_names(data: dict) -> list[str]:
+    return [a.get("raName", "") if isinstance(a, dict) else str(a) for a in data.get("run_areas") or []]
+
+
+def _save_from_login(data: dict) -> None:
     session = {k: data[k] for k in ("user", "school_code", "uuid", "device_name", "token")}
-    session["run_areas"] = [a.get("raName", "") for a in data.get("run_areas") or []]
+    session["run_areas"] = _area_names(data)
     save_session(session)
-    print(f"登录成功: {data.get('realName') or args.user} @ {data.get('school', '')}")
-    print(f"设备: {session['device_name']}  学校编码: {session['school_code']}")
-    print("跑区:", "、".join(n for n in session["run_areas"] if n) or "（未获取到）")
 
 
 async def cmd_run(args) -> None:
