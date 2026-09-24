@@ -32,13 +32,13 @@ async def shutdown() -> None:
     await services.shutdown()
 
 
-# ─────────────────────────── 请求模型 ───────────────────────────
 class LoginRequest(BaseModel):
-    user: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=1, max_length=128)
+    user: str = Field(default="", max_length=64)
+    password: str = Field(default="", max_length=128)
     school_code: str = Field(min_length=1, max_length=64)
     uuid: str | None = Field(default=None, max_length=128)
     device_name: str | None = Field(default=None, max_length=256)
+    token: str | None = Field(default=None, max_length=512)
 
 
 class TrackPoint(BaseModel):
@@ -127,16 +127,51 @@ async def schools() -> dict[str, Any]:
 async def login(request: LoginRequest) -> dict[str, Any]:
     global CURRENT
     school_code = request.school_code.strip()
-    data = await services.api_login(services.LoginRequest(
-        user=request.user,
-        password=request.password,
-        school_code=school_code,
-        uuid=request.uuid,
-        device_name=request.device_name,
-    ))
+    if request.token:
+        data = await _login_with_token(school_code, request)
+    else:
+        if not request.user or not request.password:
+            raise AppError("请填写学号和密码")
+        data = await services.api_login(services.LoginRequest(
+            user=request.user,
+            password=request.password,
+            school_code=school_code,
+            uuid=request.uuid,
+            device_name=request.device_name,
+        ))
     areas = data.get("run_areas") or []
     CURRENT = {"school_code": school_code, "run_areas": areas}
     return {**data, "run_areas": areas}
+
+
+async def _login_with_token(school_code: str, request: LoginRequest) -> dict[str, Any]:
+    """接管已有会话：不走登录接口，用真机的 token/设备身份直接取数据。"""
+    token = request.token.strip()
+    device_uuid = (request.uuid or "").strip()
+    device_name = (request.device_name or "").strip()
+    if not device_uuid or not device_name:
+        raise AppError("接管登录必须同时提供设备号与设备名")
+    url = await services.resolve_school_url(school_code)
+    info = await services.get_student_info(
+        school_url=url, uuid=device_uuid, device_name=device_name, token=token,
+    )
+    if not info.get("realName") and not info.get("studentId"):
+        raise AppError("token 无效或已过期：上游未返回学生信息")
+    try:
+        areas = await services.get_home_run_info(
+            school_url=url, uuid=device_uuid, device_name=device_name, token=token,
+        ) or []
+    except Exception as e:
+        raise AppError(f"token 可用，但跑区获取失败：{e}")
+    return {
+        **info,
+        "user": request.user.strip() or info.get("studentId") or "",
+        "school_code": school_code,
+        "uuid": device_uuid,
+        "device_name": device_name,
+        "token": token,
+        "run_areas": areas,
+    }
 
 
 async def validate(request: ValidateRequest) -> dict[str, Any]:
@@ -155,11 +190,49 @@ async def upload(request: UploadRequest) -> dict[str, Any]:
     return {"name": request.name, "distance_m": checked["distance_m"], "message": data}
 
 
+def _check_path_part(name: str, val: str) -> str:
+    val = (val or "").strip()
+    if not val or val in (".", "..") or any(c in val for c in ("/", "\\")):
+        raise AppError(f"{name} 非法")
+    return val
+
+
+def _tracks_dir(school_code: str) -> Path:
+    return ROOT / "data" / "tracks" / _check_path_part("school_code", school_code)
+
+
+async def resume(school_code: str, run_areas: list[dict]) -> dict[str, Any]:
+    """用界面本机缓存的会话恢复后端校验所需的跑区，不请求上游。"""
+    global CURRENT
+    code = _check_path_part("school_code", school_code)
+    if not isinstance(run_areas, list):
+        raise AppError("run_areas 格式错误")
+    CURRENT = {"school_code": code, "run_areas": [a for a in run_areas[:100] if isinstance(a, dict)]}
+    return {"school_code": code, "run_areas": len(CURRENT["run_areas"])}
+
+
+async def track_status(school_code: str, ra_names: list[str]) -> dict[str, Any]:
+    """一次查多个跑区在本机有没有轨迹文件，返回缺失的跑区名。"""
+    tracks_dir = _tracks_dir(school_code)
+    missing: list[str] = []
+    checked = 0
+    for raw in ra_names[:100]:
+        name = _check_path_part("ra_name", str(raw))
+        checked += 1
+        if not tracks_dir.is_dir():
+            missing.append(name)
+            continue
+        try:
+            choose_json_file_by_ra_name(name, str(tracks_dir))
+        except (FileNotFoundError, ValueError):
+            missing.append(name)
+    return {"checked": checked, "missing": missing}
+
+
 async def track_query(school_code: str, ra_name: str) -> dict[str, Any]:
     """查询某学校某跑区是否已录入轨迹文件，并返回轨迹点供界面载入。"""
-    for name, val in (("school_code", school_code), ("ra_name", ra_name)):
-        if not val or val in (".", "..") or any(c in val for c in ("/", "\\")):
-            raise AppError(f"{name} 非法")
+    school_code = _check_path_part("school_code", school_code)
+    ra_name = _check_path_part("ra_name", ra_name)
     tracks_dir = ROOT / "data" / "tracks" / school_code
     if not tracks_dir.is_dir():
         return {"found": False, "message": f"学校 {school_code} 暂无任何轨迹，请去录入"}
