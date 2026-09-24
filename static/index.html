@@ -109,6 +109,40 @@ select[hidden]{display:none!important}
 .m-err{min-height:18px;font-size:12px;color:var(--err);margin:8px 0 0;text-align:left}
 .v-login .foot-note{margin-top:14px;font-size:10.5px;color:var(--muted);line-height:1.7}
 
+/* ── 同设备登录（真机接管） ── */
+.tk-btn{width:100%;margin-top:10px;background:transparent;border:1.5px solid var(--line);border-radius:14px;padding:11px;font:600 13px "Segoe UI",sans-serif;color:var(--muted);cursor:pointer;transition:border-color .15s,color .15s}
+.tk-btn:hover{border-color:var(--jade2);color:var(--jade2)}
+.tk-sheet{position:absolute;inset:0;z-index:70;display:none;flex-direction:column;background:var(--bg)}
+.tk-sheet.on{display:flex}
+.tk-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 18px 12px;border-bottom:1px solid var(--line)}
+.tk-bar b{font-size:15px}
+.tk-x{border:0;background:transparent;font-size:19px;line-height:1;color:var(--muted);cursor:pointer;padding:2px 6px}
+.tk-body{flex:1;overflow-y:auto;padding:14px 18px 18px;display:grid;gap:12px;align-content:start;scrollbar-width:thin}
+.tk-steps{display:grid;gap:9px}
+.tk-step{display:grid;grid-template-columns:14px 1fr;gap:9px;font-size:12.5px;color:var(--ink)}
+.tk-step i{font-style:normal;color:var(--muted)}
+.tk-step[data-s="running"] i,.tk-step[data-s="ok"] i{color:var(--jade2)}
+.tk-step[data-s="failed"] i{color:var(--err)}
+.tk-step[data-s="pending"]{color:var(--muted)}
+.tk-step span{line-height:1.6;white-space:pre-wrap;word-break:break-all}
+.tk-log{font:11px/1.75 "Cascadia Code",Consolas,monospace;color:var(--muted);word-break:break-all}
+.tk-out{display:grid;gap:10px}
+.tk-row{display:flex;justify-content:space-between;gap:12px;align-items:baseline;font-size:12.5px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.tk-row em{font-style:normal;color:var(--muted);flex:0 0 auto}
+.tk-row span{font-weight:600;text-align:right;word-break:break-all}
+.tk-tut{margin:0;padding-left:19px;display:grid;gap:7px;font-size:12px;line-height:1.65;color:var(--ink)}
+.tk-fine{font-size:11.5px;color:var(--muted);line-height:1.7;margin:0}
+.tk-foot{display:grid;gap:9px;padding:12px 18px 20px;border-top:1px solid var(--line)}
+.tk-chk{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink);text-align:left}
+.tk-chk input{width:16px;height:16px;accent-color:var(--jade2);margin:0}
+.lnk{border:0;background:transparent;padding:2px 0;margin-top:2px;font:600 12px "Segoe UI",sans-serif;color:var(--jade2);cursor:pointer;text-align:left}
+.lnk:hover{text-decoration:underline}
+.ab-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:4px}
+.ab-top b{font-size:14px}
+.ab-desc{font-size:11.5px;line-height:1.75;color:var(--muted);margin:0 0 4px}
+.ab-url{display:block;width:100%;text-align:left;border:0;background:transparent;padding:7px 0;font:600 12.5px "Cascadia Code",Consolas,monospace;color:var(--jade2);cursor:pointer;word-break:break-all}
+.ab-url:hover{color:var(--jade)}
+
 /* ── 首页（跑步） ── */
 .greet{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .greet h3{font-size:19px;margin:0;letter-spacing:-.02em}
@@ -259,6 +293,7 @@ body.app-mode{padding:0;display:block;background:#0f1512;overflow:hidden}
             </div>
           </div>
           <button class="m-btn" id="btn-login">登 录</button>
+          <button class="tk-btn" id="btn-takeover" type="button">同设备登录（安卓真机接管）</button>
           <p class="m-err" id="login-err"></p>
         </div>
 
@@ -307,6 +342,9 @@ body.app-mode{padding:0;display:block;background:#0f1512;overflow:hidden}
             </div>
           </div>
 
+          <div class="set-hint warn" id="track-hint" hidden></div>
+          <button class="m-btn sm gold" id="btn-track-draw" style="width:100%;margin-bottom:12px" hidden>去设置里绘制轨迹</button>
+
           <button class="m-btn" id="btn-yunrun">开始跑步</button>
           <p class="task-note" id="run-note">任务在本地后台执行，完成后自动刷新统计。</p>
         </div>
@@ -341,13 +379,34 @@ body.app-mode{padding:0;display:block;background:#0f1512;overflow:hidden}
           </div>
           <div class="app-card">
             <span class="v-label">地图与本地引擎</span>
-            <div class="set-row" style="margin-top:8px"><label>高德地图 Key</label><input id="set-amap-key" placeholder="Web端(JS API) Key"><small>仅存本机，用于详情轨迹与围栏绘制</small></div>
+            <div class="set-row" style="margin-top:8px"><label>高德地图 Key</label><input id="set-amap-key" placeholder="Web端(JS API) Key"><small>仅存本机，用于详情轨迹与围栏绘制</small>
+              <button class="lnk" id="btn-amap-help" type="button">如何获取 Key ›</button>
+              <div class="set-hint" id="amap-help" hidden>
+                <ol class="tk-tut">
+                  <li>已打开高德开放平台控制台，登录（可用手机号注册）</li>
+                  <li>「应用示例 → 我的应用 → 创建新 Key」，产品名称随意填</li>
+                  <li>服务平台选「Web端(JS API)」，其余不要选</li>
+                  <li>「域名白名单」留空。本机是从 file:// 打开页面的，一旦填了白名单会报 INVALID_USER_DOMAIN</li>
+                  <li>提交后把 Key 和安全密钥（jscode）分别粘贴回上面两格，点「保存设置」</li>
+                </ol>
+              </div>
+            </div>
             <div class="set-row"><label>安全密钥</label><input id="set-amap-sec" placeholder="securityJsCode（可选）"></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px">
               <button class="m-btn sm" id="btn-save-set">保存设置</button>
               <button class="m-btn sm gold" id="btn-test">自检</button>
             </div>
             <div class="set-info" id="set-conn">未检测</div>
+          </div>
+          <div class="app-card">
+            <span class="v-label">关于</span>
+            <div class="ab-top"><b>茉莉 · 云运动</b><span class="pill gold">v1.0</span></div>
+            <p class="ab-desc">校园跑步 App「云运动」的第三方桌面客户端，仅供学习交流与技术研究。账号、轨迹、照片等数据只存本机。</p>
+            <button class="ab-url" id="btn-repo" type="button">github.com/GoldenJinDev/moli-cloud-sports</button>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px">
+              <button class="m-btn sm gold" id="btn-repo-copy">复制地址</button>
+              <button class="m-btn sm gold" id="btn-issues">提 Issue</button>
+            </div>
           </div>
           <div class="app-card">
             <span class="v-label">账号</span>
@@ -410,6 +469,13 @@ body.app-mode{padding:0;display:block;background:#0f1512;overflow:hidden}
         </div>
       </div>
 
+      <!-- 同设备登录（真机接管） -->
+      <div class="tk-sheet" id="tk-sheet">
+        <div class="tk-bar"><b id="tk-title">同设备登录</b><button class="tk-x" id="tk-close" type="button">×</button></div>
+        <div class="tk-body" id="tk-body"></div>
+        <div class="tk-foot" id="tk-foot"></div>
+      </div>
+
       <div class="tabbar">
         <button class="tab" data-v="home"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M6 10v10h12V10"/></svg>首页</button>
         <button class="tab" data-v="rec"><svg viewBox="0 0 24 24"><path d="M4 19V9M10 19V5M16 19v-7M21 19H3"/></svg>记录</button>
@@ -458,6 +524,7 @@ function show(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v===name));
   if(name==='rec')loadRecords();
   if(name==='set')fillSettings();
+  if(name==='home')refreshTrackHint();
   if(name==='draw')initDrawView();
 }
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
@@ -580,6 +647,159 @@ $('btn-login').addEventListener('click',async()=>{
   catch(e){err.textContent=e.message;}
   finally{btn.disabled=false;btn.textContent='登 录';}
 });
+
+/* ── 同设备登录：从自己的安卓真机接管会话 ── */
+const tk={mode:'guide',job:null,timer:null,clear:true,err:''};
+const TK_TUTORIAL=[
+  '手机「设置 → 关于手机」，连续点「版本号」7 次，开启开发者模式',
+  '「设置 → 开发者选项」里打开「USB 调试」',
+  '用数据线连接电脑，手机弹出「允许 USB 调试」→ 勾选「一律允许」',
+  '在手机上打开云运动 App。工具读的是它自己打印到调试日志里的明文，不请求业务服务器，也不会解密 HTTPS',
+];
+function tkOpen(){
+  const err=$('login-err');err.textContent='';
+  if(!selSchool){tk.err='';err.textContent='请先选择学校，再用同设备登录';return;}
+  $('tk-sheet').classList.add('on');
+  tkShow('guide');
+}
+function tkClose(){
+  $('tk-sheet').classList.remove('on');
+  if(tk.timer){clearInterval(tk.timer);tk.timer=null;}
+}
+function tkShow(mode,err=''){tk.mode=mode;tk.err=err;tkRender();}
+function tkTitle(){return {guide:'同设备登录',run:'正在读取真机会话',result:'会话已就绪'}[tk.mode];}
+function tkStepsHtml(){
+  const icons={pending:'·',running:'…',ok:'✓',failed:'✕'};
+  const steps=(tk.job&&tk.job.steps)||[];
+  if(!steps.length)return '';
+  return '<div class="tk-steps">'+steps.map(s=>
+    `<div class="tk-step" data-s="${esc(s.state)}"><i>${icons[s.state]||'·'}</i><span>${esc(s.label)}${s.detail?'　'+esc(s.detail):''}</span></div>`
+  ).join('')+'</div>';
+}
+function tkLogHtml(){
+  const log=(tk.job&&tk.job.log)||[];
+  return log.length?'<div class="tk-log">'+esc(log.join('\n'))+'</div>':'';
+}
+function tkHint(cls,text){return `<div class="set-hint${cls?' '+cls:''}">${esc(text)}</div>`;}
+function tkRender(){
+  $('tk-title').textContent=tkTitle();
+  const body=$('tk-body'),foot=$('tk-foot');
+  if(tk.mode==='guide'){
+    body.innerHTML=tkHint('','仅支持安卓设备。需要本机有 adb（平台工具），并让手机处于可调试状态。')
+      +'<ol class="tk-tut">'+TK_TUTORIAL.map(t=>`<li>${esc(t)}</li>`).join('')+'</ol>'
+      +tkHint('warn','接管后本机会使用真机的设备身份，请勿再用其他客户端频繁换设备。');
+    foot.innerHTML=(tk.err?tkHint('err',tk.err):'')
+      +'<label class="tk-chk"><input type="checkbox" id="tk-clear"'+(tk.clear?' checked':'')+'>开始前清空设备日志（推荐，避免读到旧会话的 token）</label>'
+      +'<button class="m-btn" id="tk-start" type="button">开始检测</button>'
+      +'<button class="m-btn gold" id="tk-adb" type="button">本机没有 adb，自动下载</button>';
+    $('tk-clear').addEventListener('change',e=>{tk.clear=e.target.checked;});
+    $('tk-start').addEventListener('click',tkStart);
+    $('tk-adb').addEventListener('click',tkInstallAdb);
+    return;
+  }
+  if(tk.mode==='run'){
+    const top=body.scrollTop;
+    body.innerHTML=tkStepsHtml()+tkLogHtml();
+    body.scrollTop=(body.scrollHeight>body.clientHeight)?body.scrollHeight:top;
+    foot.innerHTML=(tk.err?tkHint('err',tk.err):'')
+      +'<button class="m-btn gold" id="tk-cancel" type="button">取消</button>';
+    $('tk-cancel').addEventListener('click',tkCancel);
+    return;
+  }
+  const r=(tk.job&&tk.job.result)||{};
+  const rows=[['设备名',r.device_name],['系统版本',r.sys_edition],['设备号',r.uuid],['token',tkMask(r.token)]];
+  body.innerHTML='<div class="tk-out">'+rows.map(([k,v])=>
+    `<div class="tk-row"><em>${esc(k)}</em><span>${esc(v||'—')}</span></div>`).join('')+'</div>'
+    +tkHint('','登录后本机将以这台设备的身份提交跑步。');
+  foot.innerHTML=(tk.err?tkHint('err',tk.err):'')
+    +'<button class="m-btn" id="tk-login" type="button">用此设备登录</button>'
+    +'<button class="m-btn gold" id="tk-again" type="button">重新抓取</button>';
+  $('tk-login').addEventListener('click',tkLogin);
+  $('tk-again').addEventListener('click',tkStart);
+}
+function tkMask(t){return t?String(t).slice(0,6)+'…'+String(t).slice(-4):'';}
+function tkPaint(snap){tk.job=snap;tkRender();}
+async function tkStart(){
+  let err='';
+  try{tk.job=await call('takeover_start',{clear_log:tk.clear});}
+  catch(e){err=e.message;}
+  if(tk.timer)clearInterval(tk.timer);
+  tk.timer=setInterval(tkTick,900);
+  tkShow('run',err);
+}
+async function tkTick(){
+  let s;
+  try{s=await call('takeover_poll');}
+  catch(e){
+    if(tk.timer){clearInterval(tk.timer);tk.timer=null;}
+    return tkShow('guide',e.message);
+  }
+  tk.job=s;
+  if(s.status==='running')return tkRender();
+  if(tk.timer){clearInterval(tk.timer);tk.timer=null;}
+  if(s.status==='done')return tkShow('result');
+  tkShow('guide',s.error||'已取消');
+}
+async function tkCancel(){
+  try{tkPaint(await call('takeover_cancel'));}catch(e){tk.err=e.message;}
+}
+async function tkInstallAdb(){
+  const btn=$('tk-adb');btn.disabled=true;btn.textContent='下载中，约 15MB…';
+  try{
+    const r=await call('takeover_install_adb');
+    tk.err=r.ok?'':r.message;
+  }catch(e){tk.err=e.message;}
+  tkRender();
+}
+async function tkLogin(){
+  const r=(tk.job&&tk.job.result)||{};
+  const btn=$('tk-login');btn.disabled=true;btn.textContent='登录中…';
+  try{
+    const d=await call('login',{
+      user:$('in-user').value.trim(),school_code:selSchool.schoolCode,
+      token:r.token,uuid:r.uuid,device_name:r.device_name,
+    });
+    localStorage.setItem(LS.uuid,d.uuid);
+    localStorage.setItem(LS.device,d.device_name);
+    localStorage.setItem(LS.acct,JSON.stringify({user:d.user,school_code:d.school_code}));
+    session={...d,login_at:Date.now()};
+    saveSession();applySession();tkClose();show('home');
+  }catch(e){
+    tk.err=e.message;btn.disabled=false;btn.textContent='用此设备登录';tkRender();
+  }
+}
+$('btn-takeover').addEventListener('click',tkOpen);
+$('tk-close').addEventListener('click',tkClose);
+
+/* ── 外链与跑区轨迹检测 ── */
+const REPO='https://github.com/GoldenJinDev/moli-cloud-sports';
+const EXT={amap:'https://console.amap.com/dev/key/app',repo:REPO,issues:REPO+'/issues'};
+function openExternal(u){const p=window.pywebview;if(p&&p.openUrl)p.openUrl(u);}
+function copyText(t){const p=window.pywebview;if(p&&p.copyText)p.copyText(t);}
+function flash(btn,text){
+  const old=btn.textContent;btn.textContent=text;btn.disabled=true;
+  setTimeout(()=>{btn.textContent=old;btn.disabled=false;},1200);
+}
+async function refreshTrackHint(){
+  const hint=$('track-hint'),btn=$('btn-track-draw');
+  const areas=((session&&session.run_areas)||[]).map(a=>a.raName||'').filter(Boolean);
+  if(!areas.length)return hint.hidden=btn.hidden=true;
+  let d;
+  try{d=await call('track_status',{school_code:session.school_code,ra_names:areas});}
+  catch(e){return hint.hidden=btn.hidden=true;}
+  if(!d.missing||!d.missing.length)return hint.hidden=btn.hidden=true;
+  hint.textContent=`${d.missing.length} 个跑区还没有轨迹文件：${d.missing.join('、')}。跑步前请先绘制并保存。`;
+  hint.hidden=btn.hidden=false;
+}
+$('btn-track-draw').addEventListener('click',()=>show('set'));
+$('btn-amap-help').addEventListener('click',()=>{
+  const h=$('amap-help');
+  h.hidden=!h.hidden;
+  if(!h.hidden)openExternal(EXT.amap);
+});
+$('btn-repo').addEventListener('click',()=>openExternal(EXT.repo));
+$('btn-issues').addEventListener('click',()=>openExternal(EXT.issues));
+$('btn-repo-copy').addEventListener('click',e=>{copyText(REPO);flash(e.currentTarget,'已复制 ✓');});
 
 function applySession(){
   if(!session)return;
@@ -974,6 +1194,7 @@ async function init(){
     try{await doLogin(acct.user,acct.password,acct.school_code,false);return;}
     catch(e){$('login-err').textContent='自动登录失败：'+e.message;}
   }else if(session){
+    try{await call('resume',{school_code:session.school_code,run_areas:session.run_areas||[]});}catch(e){}
     applySession();show('home');
   }
 }
