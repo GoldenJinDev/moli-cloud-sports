@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """云运动真机助手：设备信息 / token 提取 / 客户端调试日志查看（依赖 adb）
+
 重要说明：本工具不是抓包，也没有解密 HTTPS——它读取的是云运动 App 自行打印到
 Android 调试日志(logcat)中的明文请求与响应（加密前 / 解密后的本机内存数据）。
 若官方在后续版本关闭这些日志打印，本工具将失效。
+
 支持真机（USB 或无线 adb）与模拟器（虚拟机+虚拟定位环境同样适用，只要 adb 能连上）。
 """
 import json
@@ -11,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 import zipfile
@@ -196,6 +199,10 @@ def mode_token(pid: str):
     try:
         while time.time() < end:
             time.sleep(2)
+            cur = app_pid()  # 轮询中重取：App 在后台被杀重启后无需重跑脚本
+            if cur and cur != pid:
+                print(f"\033[33m检测到云运动进程重启，过滤 pid 更新: {pid or '(无)'} → {cur}\033[0m")
+                pid = cur
             if _token_scan(dump_logcat(pid)):
                 return
     except KeyboardInterrupt:
@@ -217,39 +224,83 @@ def _token_scan(lines) -> bool:
     return found
 
 
+def _consume(proc, saver):
+    for line in proc.stdout:
+        saver.put(line.rstrip("\n"))
+        parsed = parse_tt(line)
+        if not parsed:
+            continue
+        ts, p, t, msg = parsed
+        label, body = split_label(msg)
+        if label is None:
+            continue
+        if label in LABELS:
+            saver.put_event(ts, p, t, label, body)
+            print(render(ts, p, t, label, body))
+        else:
+            print(f"{C_RESET}{ts} pid={p} tid={t} \033[90m[未识别标签:{label}]（已存原始日志）\033[0m {body[:120]}")
+
+
+def _watch_pid(state):
+    """每2秒重取 pid：云运动被杀重启后更新 state 并断开当前 logcat，由主循环重连接。"""
+    while state["running"] and not state["restarted"]:
+        time.sleep(2)
+        cur = app_pid()
+        if cur and cur != state["pid"]:
+            state["pid"] = cur
+            state["restarted"] = True
+            state["proc"].terminate()
+            return
+        if state["pid"] and not cur:
+            # App 已退出：pidof 取不到，旧 --pid 流会自行结束，交给主循环处理
+            state["gone"] = True
+
+
 def mode_view(pid: str):
     saver = LogSaver()
     if ask("开始记录前清空设备日志缓冲？(y/N)").lower() == "y":
         run([ADB, "logcat", "-c"])
     print(f"开始读取调试日志（原始行同时存档到 {saver.dir}\\raw.log），Ctrl+C 停止并收尾")
-    proc = start_logcat(pid)
+    state = {"pid": pid, "running": True, "restarted": False, "gone": False, "proc": None}
     try:
-        for line in proc.stdout:
-            saver.put(line.rstrip("\n"))
-            parsed = parse_tt(line)
-            if not parsed:
+        while state["running"]:
+            for k in ("restarted", "gone"):
+                state[k] = False
+            proc = start_logcat(state["pid"])
+            state["proc"] = proc
+            watcher = threading.Thread(target=_watch_pid, args=(state,), daemon=True)
+            watcher.start()
+            try:
+                _consume(proc, saver)
+            finally:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            if state["restarted"]:
+                print(f"\033[33m检测到云运动进程重启（pid={state['pid']}），重连日志…\033[0m")
                 continue
-            ts, p, t, msg = parsed
-            label, body = split_label(msg)
-            if label is None:
+            cur = app_pid()
+            if cur and cur != state["pid"]:
+                state["pid"] = cur
+                print(f"\033[33m检测到云运动进程重启（pid={cur}），重连日志…\033[0m")
                 continue
-            if label in LABELS:
-                saver.put_event(ts, p, t, label, body)
-                print(render(ts, p, t, label, body))
-            else:
-                print(f"{C_RESET}{ts} pid={p} tid={t} \033[90m[未识别标签:{label}]（已存原始日志）\033[0m {body[:120]}")
+            if state["gone"] or not cur:
+                state["pid"] = ""
+                print("\033[33m云运动进程已退出，暂不过滤 pid 继续监听，等待其重启…\033[0m")
+                time.sleep(2)
+                continue
+            break  # 流结束且 pid 未变（如 adb 断开），不无限重连
     except KeyboardInterrupt:
         print("\n收到 Ctrl+C，正在收尾…")
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+        state["running"] = False
         saver.close()
         print(f"存档完成: {saver.dir}")
 
 
+# ─────────────────────────── 脱敏打包 ───────────────────────────
 MASKS = [
     (re.compile(r'("password"\s*:\s*")[^"]*(")'), r"\1***\2"),
     (re.compile(r'("token"\s*:\s*")[^"]{4}[^"]*(")'), r"\1****\2"),
