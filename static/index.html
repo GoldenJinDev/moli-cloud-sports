@@ -100,6 +100,7 @@ body{
 .dd-item.on i{color:rgba(255,255,255,.8)}
 .dd-empty{padding:14px;text-align:center;font-size:12px;color:var(--muted)}
 select[hidden]{display:none!important}
+.m-field[hidden]{display:none!important}
 .m-btn{width:100%;border:0;border-radius:14px;padding:13px;font:700 15px "Segoe UI",sans-serif;color:#fff;cursor:pointer;background:var(--jade2);transition:opacity .15s,transform .15s;margin-top:4px}
 .m-btn:active{transform:scale(.97)}
 .m-btn:disabled{opacity:.45;cursor:not-allowed}
@@ -292,6 +293,11 @@ body.app-mode{padding:0;display:block;background:#0f1512;overflow:hidden}
               </div>
             </div>
           </div>
+          <div class="m-field">
+            <div class="dd" data-dd="sel-device"><button type="button" class="dd-btn"><span></span><i>▾</i></button><div class="dd-panel" hidden><div class="dd-list"></div></div></div>
+            <select id="sel-device" hidden><option value="">随机设备（默认）</option></select>
+          </div>
+          <div class="m-field" id="device-custom-row" hidden><input id="in-device-custom" placeholder="自定义设备名，形如 vivo(V2366GA)" autocomplete="off"></div>
           <button class="m-btn" id="btn-login">登 录</button>
           <button class="tk-btn" id="btn-takeover" type="button">同设备登录（安卓真机接管）</button>
           <p class="m-err" id="login-err"></p>
@@ -366,7 +372,7 @@ body.app-mode{padding:0;display:block;background:#0f1512;overflow:hidden}
         <!-- 设置 -->
         <div class="view" id="view-set">
           <div class="app-card">
-            <span class="v-label">人脸照片（提交时轮询携带）</span>
+            <span class="v-label">人脸照片（每次抽查随机取一张）</span>
             <div class="set-hint" id="face-hint">—</div>
             <div class="fthumbs" id="fthumbs"></div>
             <input type="file" id="in-faces" accept="image/*" multiple hidden>
@@ -397,6 +403,17 @@ body.app-mode{padding:0;display:block;background:#0f1512;overflow:hidden}
               <button class="m-btn sm gold" id="btn-test">自检</button>
             </div>
             <div class="set-info" id="set-conn">未检测</div>
+          </div>
+          <div class="app-card">
+            <span class="v-label">上报版本号</span>
+            <div class="set-row" style="margin-top:8px"><label>version</label><input id="set-version" placeholder="留空 = 用内置版本">
+              <small>平台按这个头做版本闸门。官方升级后若「能登录却取不到跑区/记录」，可在此填上平台当前要求的版本（形如 3.6.8），保存后下一次请求即生效，不用重启。</small>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px">
+              <button class="m-btn sm" id="btn-save-version">保存版本</button>
+              <button class="m-btn sm gold" id="btn-reset-version">恢复默认</button>
+            </div>
+            <div class="set-info" id="version-state" hidden></div>
           </div>
           <div class="app-card">
             <span class="v-label">关于</span>
@@ -491,12 +508,13 @@ body.app-mode{padding:0;display:block;background:#0f1512;overflow:hidden}
 if(location.search.indexOf('mode=app')>=0||location.hash==='#app')document.body.classList.add('app-mode');
 
 const $=id=>document.getElementById(id);
-const LS={session:'moli_mobile_session',acct:'moli_mobile_account',uuid:'moli_uuid',device:'moli_device_name',cfg:'moli_mobile_settings'};
+const LS={session:'moli_mobile_session',acct:'moli_mobile_account',uuid:'moli_uuid',device:'moli_device_name',version:'moli_app_version',cfg:'moli_mobile_settings'};
 
 let cfg={};try{cfg=JSON.parse(localStorage.getItem(LS.cfg)||'{}')||{};}catch(e){}
 let session=null;try{session=JSON.parse(localStorage.getItem(LS.session)||'null');}catch(e){}
 let faceCount=0;
 let schools=[];let pollTimer=null;
+let relogged=false;
 let dtMap=null,drMap=null;
 let dtOverlays=[],drFenceOverlays=[];
 let dtSat=null,drSat=null;
@@ -533,11 +551,37 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
 }));
 
 /* ── 连接检测 ── */
+function cacheLine(d){
+  const c=d&&d.cache;
+  let s=`本地服务正常 · 时间 <b>${esc(d.server_time)}</b>`;
+  if(c&&c.last_error)s+=`<br><span style="color:var(--err)">${esc(c.last_error)}</span>`;
+  return s;
+}
+async function handleStale(msg){
+  if(!msg)return false;
+  const acct=JSON.parse(localStorage.getItem(LS.acct)||'null');
+  if(acct&&acct.user&&acct.password){
+    try{
+      await doLogin(acct.user,acct.password,acct.school_code,false);
+      relogged=true;
+      const n=$('run-note');if(n){n.className='task-note';n.textContent='学校接口地址已变更，已用本机账号自动重新登录。';}
+      return true;
+    }catch(e){
+      show('login');$('login-err').textContent='自动重新登录失败：'+e.message+'（'+msg+'）';
+      return true;
+    }
+  }
+  show('login');
+  relogged=true;
+  $('login-err').textContent=msg+'，请重新登录（本机未保存密码，无法自动重登）。';
+  return true;
+}
 async function checkConn(){
   try{
     const d=await call('status');
     $('conn-dot').classList.add('on');$('conn-text').textContent='正常';
-    $('set-conn').innerHTML=`本地服务正常 · 时间 <b>${d.server_time}</b>`;
+    $('set-conn').innerHTML=cacheLine(d);
+    await handleStale(d&&d.stale);
     return true;
   }catch(e){
     $('conn-dot').classList.remove('on');$('conn-text').textContent='异常';
@@ -619,6 +663,7 @@ async function loadSchools(){
       const s=schools.find(x=>String(x.schoolCode)===String(code));
       if(s){selSchool=s;$('school-btn-label').textContent=s.schoolName+' · '+s.schoolCode;}
     }
+    await handleStale(d&&d.stale);
   }catch(e){
     $('school-btn-label').textContent='学校加载失败';
   }
@@ -854,10 +899,9 @@ $('btn-yunrun').addEventListener('click',async()=>{
   try{
     const body={user:session.user,school_code:session.school_code,uuid:session.uuid,device_name:session.device_name,
       token:session.token,target_distance:dist,ra_name:a.raName,fast:$('sel-speed').value==='fast'};
-    if(faceCount){const f=await call('face_next');body.face_base64=f.data_base64;}
     const d=await call('yun_run',body);
     if(d.task_id){note.textContent='任务已创建：'+d.task_id;$('kv-task').textContent=d.task_id.slice(0,8)+'…';startPoll(d.task_id);}
-    else{note.textContent='完成：'+(d.result?.msg||JSON.stringify(d.result||d));$('run-state').textContent='完成';$('run-ring').style.strokeDashoffset='0';loadStats();}
+    else{const r=d.result||{},bad=r.qualified===false;note.className='task-note'+(bad?' err':'');note.textContent=(bad?'不合格：':'完成：')+(r.msg||r.reason||JSON.stringify(r));$('run-state').textContent=bad?'不合格':'完成';$('run-ring').style.strokeDashoffset='0';loadStats();}
   }catch(e){note.className='task-note err';note.textContent=e.message;}
   finally{if(!pollTimer)btn.disabled=false;}
 });
@@ -996,8 +1040,8 @@ function updateFaceHint(){
   const h=$('face-hint');
   if(!session){h.className='set-hint';h.textContent='登录后根据跑区自动判断是否需要刷脸。';return;}
   const need=(session.run_areas||[]).some(a=>a.runFaceStatus==='Y');
-  if(need){h.className='set-hint';h.textContent='当前账号存在需要刷脸的跑区，提交跑步时会按顺序轮询携带下方照片。';}
-  else{h.className='set-hint warn';h.textContent='提示：当前账号所有跑区均无需刷脸。仍可添加照片，提交时若学校要求人脸会自动轮询携带。';}
+  if(need){h.className='set-hint';h.textContent='当前账号存在需要刷脸的跑区。提交时不固定某一张：每个抽查点各从下方照片里随机取一张。';}
+  else{h.className='set-hint warn';h.textContent='提示：当前账号所有跑区均无需刷脸。仍可添加照片，学校一旦要求人脸会自动从下方照片逐次随机取。';}
 }
 async function renderFaces(){
   const box=$('fthumbs');
@@ -1029,21 +1073,40 @@ $('in-faces').addEventListener('change',async e=>{
   const files=[...e.target.files];e.target.value='';
   if(!files.length)return;
   const need=(session?.run_areas||[]).some(a=>a.runFaceStatus==='Y');
-  if(!need){$('face-hint').className='set-hint warn';$('face-hint').textContent='提示：当前账号跑区均不需要刷脸，照片仍会保存并在需要时携带。';}
+  const errs=[],warns=[];
   for(const f of files){
-    try{await call('face_add',{data_base64:await compressImage(f,512,.85)});}catch(err){}
+    try{
+      const r=await call('face_add',{data_base64:await compressImage(f)});
+      if(r&&r.warning)warns.push(r.warning);
+    }catch(err){errs.push(err.message);}
   }
   renderFaces();
+  const h=$('face-hint');
+  if(errs.length){h.className='set-hint err';h.textContent='未通过质检（'+errs.length+' 张）：'+errs.join('；');return;}
+  if(warns.length){h.className='set-hint warn';h.textContent='已保存，但'+warns[0]+'（真机会再压一次，不影响提交）。';return;}
+  if(!need){h.className='set-hint warn';h.textContent='提示：当前账号跑区均不需要刷脸，照片仍会保存并在需要时携带。';}
+  else{h.className='set-hint';h.textContent='已保存。提交时每个抽查点会从下方照片里随机取一张。';}
 });
-function compressImage(file,maxSide,quality){
+function compressImage(file){
   return new Promise((res,rej)=>{
     const img=new Image();
     img.onload=()=>{
-      const sc=Math.min(1,maxSide/Math.max(img.width,img.height));
+      const iw=img.width,ih=img.height;
+      let cw=iw,ch=iw*4/3;
+      if(ch>ih){ch=ih;cw=ih*3/4;}
+      const sx=(iw-cw)/2,sy=(ih-ch)/2;
+      const sc=Math.min(1,720/Math.max(cw,ch));
       const c=document.createElement('canvas');
-      c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
-      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-      res(c.toDataURL('image/jpeg',quality).split(',')[1]);
+      c.width=Math.round(cw*sc);c.height=Math.round(ch*sc);
+      c.getContext('2d').drawImage(img,sx,sy,cw,ch,0,0,c.width,c.height);
+      const b64=q=>c.toDataURL('image/jpeg',q).split(',')[1];
+      const kb=s=>s.length*0.75/1024;
+      let out=b64(0.95);
+      for(const q of [0.9,0.85,0.8,0.75,0.7,0.6,0.5]){
+        if(kb(out)>150)out=b64(q);
+        else break;
+      }
+      res(out);
     };
     img.onerror=()=>rej(Error('图片读取失败'));
     img.src=URL.createObjectURL(file);
@@ -1161,7 +1224,7 @@ $('btn-dr-save').addEventListener('click',async()=>{
 function fillSettings(){
   $('set-amap-key').value=cfg.amap_key||'';
   $('set-amap-sec').value=cfg.amap_security||'';
-  renderFaces();updateFaceHint();
+  renderFaces();updateFaceHint();fillVersion();
   if(session)$('set-account').innerHTML=`<b>${esc(session.realName||session.user)}</b>（${esc(session.user)}）<br>学校编码 ${esc(session.school_code)} · 跑区 ${(session.run_areas||[]).length} 个`;
   else $('set-account').textContent='未登录';
 }
@@ -1174,6 +1237,62 @@ $('btn-save-set').addEventListener('click',async()=>{
   checkConn();
 });
 $('btn-test').addEventListener('click',checkConn);
+
+/* ── 上报版本号 ── */
+const VER_RE=/^\d+\.\d+(?:\.\d+)?$/;
+function versionNote(html){
+  const el=$('version-state');
+  el.hidden=!html;
+  el.innerHTML=html||'';
+}
+function fillVersion(){
+  $('set-version').value=localStorage.getItem(LS.version)||'';
+  versionNote('');
+}
+async function pushStoredVersion(){
+  const v=localStorage.getItem(LS.version);
+  if(!v)return;
+  try{await call('set_app_version',{version:v});}catch(e){}
+}
+$('btn-save-version').addEventListener('click',async()=>{
+  const raw=$('set-version').value.trim();
+  if(raw&&!VER_RE.test(raw)){versionNote('格式不对，应形如 3.6.7');return;}
+  let r;
+  try{r=await call('set_app_version',{version:raw});}
+  catch(e){versionNote(esc(e.message));return;}
+  if(raw)localStorage.setItem(LS.version,raw);else localStorage.removeItem(LS.version);
+  versionNote(r.warning?`<span style="color:var(--err)">${esc(r.warning)}</span>`:'');
+});
+$('btn-reset-version').addEventListener('click',async()=>{
+  localStorage.removeItem(LS.version);
+  $('set-version').value='';
+  try{await call('set_app_version',{version:''});}catch(e){}
+  versionNote('');
+});
+
+/* ── 登录页选设备 ── */
+const DEVICE_CUSTOM='__custom__';
+function saveDeviceName(v){
+  if(!v){localStorage.removeItem(LS.device);return true;}
+  if(v.length>64||/[<>"]/.test(v)){$('login-err').textContent='设备名不合法：不超过 64 字符、不能含 < > "';return false;}
+  localStorage.setItem(LS.device,v);$('login-err').textContent='';return true;
+}
+async function loadDevices(){
+  let models=[];
+  try{models=(await call('device_models')).models||[];}catch(e){}
+  const sel=$('sel-device'),saved=localStorage.getItem(LS.device)||'';
+  const target=!saved?'':(models.indexOf(saved)>=0?saved:DEVICE_CUSTOM);
+  const opt=(v,t)=>`<option value="${esc(v)}"${v===target?' selected':''}>${esc(t)}</option>`;
+  sel.innerHTML=opt('','随机设备（默认）')+models.map(m=>opt(m,m)).join('')+opt(DEVICE_CUSTOM,'自定义…');
+  $('device-custom-row').hidden=target!==DEVICE_CUSTOM;
+  if(target===DEVICE_CUSTOM)$('in-device-custom').value=saved;
+}
+$('sel-device').addEventListener('change',()=>{
+  const v=$('sel-device').value;
+  if(v===DEVICE_CUSTOM){$('device-custom-row').hidden=false;saveDeviceName($('in-device-custom').value.trim());return;}
+  $('device-custom-row').hidden=true;saveDeviceName(v);
+});
+$('in-device-custom').addEventListener('input',()=>{saveDeviceName($('in-device-custom').value.trim());});
 $('btn-logout').addEventListener('click',()=>{
   clearSession();localStorage.removeItem(LS.acct);location.reload();
 });
@@ -1184,16 +1303,18 @@ clock();setInterval(clock,20000);
 
 /* ── 启动：自动登录刷新 ── */
 async function init(){
+  await pushStoredVersion();
   await checkConn();
   await migrateFaces();
   await loadSchools();
+  await loadDevices();
   const acct=JSON.parse(localStorage.getItem(LS.acct)||'null');
-  if(acct&&acct.user&&acct.password){
+  if(!relogged&&acct&&acct.user&&acct.password){
     $('in-user').value=acct.user;$('in-pass').value=acct.password;
     $('login-err').textContent='正在自动登录…';
     try{await doLogin(acct.user,acct.password,acct.school_code,false);return;}
     catch(e){$('login-err').textContent='自动登录失败：'+e.message;}
-  }else if(session){
+  }else if(session&&!relogged){
     try{await call('resume',{school_code:session.school_code,run_areas:session.run_areas||[]});}catch(e){}
     applySession();show('home');
   }
