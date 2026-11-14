@@ -27,7 +27,6 @@ from services import AppError
 
 ROOT = Path(__file__).resolve().parent
 SESSION_FILE = ROOT / "data" / "cli_session.json"
-FACES_DIR = ROOT / "data" / "faces"
 
 
 def load_session() -> dict:
@@ -48,20 +47,6 @@ def require_session() -> dict:
         raise AppError("本机无登录态，请先执行: python cli.py login --user <学号>")
     return s
 
-
-
-def next_face_file() -> Path:
-    """从 data/faces 轮询取下一张照片。"""
-    files = sorted(FACES_DIR.glob("*.jpg"), key=lambda x: x.name)
-    if not files:
-        raise AppError(f"{FACES_DIR} 下没有人脸照片")
-    cursor = FACES_DIR / ".cursor"
-    try:
-        idx = int(cursor.read_text())
-    except Exception:
-        idx = 0
-    cursor.write_text(str(idx + 1))
-    return files[idx % len(files)]
 
 
 def parse_range(text: str) -> tuple[float, float]:
@@ -121,8 +106,8 @@ async def cmd_run(args) -> None:
     ra_name = args.ra_name or (s.get("run_areas") or [""])[0]
 
     face_base64 = None
-    if args.face:
-        path = next_face_file() if args.face == "auto" else Path(args.face)
+    if args.face and args.face != "auto":
+        path = Path(args.face)
         if not path.is_file():
             raise AppError(f"照片不存在: {path}")
         face_base64 = base64.b64encode(path.read_bytes()).decode()
@@ -192,7 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--distance", type=int, required=True, help="目标距离（米，≤4500）")
     p.add_argument("--ra-name", default="", help="跑区名称，默认取登录时首个跑区")
     p.add_argument("--fast", action="store_true", help="快速模式：同步完成，不真实等待")
-    p.add_argument("--face", default="", help="刷脸任务：auto 轮询 data/faces，或指定 jpg 路径")
+    p.add_argument("--face", default="", help="刷脸任务：auto 每次抽查从 data/faces 随机取一张，或指定 jpg 路径（全程用这张）")
     p.add_argument("--pace", default="", help="配速区间 min/km，如 5.5,6.7")
     p.add_argument("--cadence", default="", help="步频区间 spm，如 145,175")
     p.set_defaults(func=cmd_run)
