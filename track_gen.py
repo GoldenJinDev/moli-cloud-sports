@@ -1305,6 +1305,45 @@ def build_split_payload(
     }
 
 
+def build_payload_from_card_points(
+    batch: RunSplitPayload,
+    points: Sequence[CardPoint],
+    previous_last_point: Optional[CardPoint] = None,
+) -> Optional[RunSplitPayload]:
+    """从已建好的批里切出一段，重算包级增量字段，用于把一批拆成多包上报。
+
+    入参是 CardPoint(驼峰、绝对值)而非 TrackPoint，所以不能复用 build_split_payload。
+    段退化(空/时长或里程不增)时返回 None，调用方应当把这段留到下一包一起发，
+    而不是发一个非法包。
+    """
+    if not points:
+        return None
+
+    prev_step = int(previous_last_point["runStep"]) if previous_last_point else 0
+    prev_time = int(previous_last_point["runTime"]) if previous_last_point else 0
+    prev_mileage = float(previous_last_point["runMileage"]) if previous_last_point else 0.0
+
+    last_point = points[-1]
+    step_number = int(last_point["runStep"]) - prev_step
+    times = int(last_point["runTime"]) - prev_time
+    mileage = float(last_point["runMileage"]) - prev_mileage
+    if step_number < 0 or times <= 0 or mileage <= 0:
+        return None
+
+    speeds = compute_pace_min_per_km(mileage, times)
+    strides = mileage / step_number if step_number > 0 else 0.0
+    run_steps = step_number / (times / 60.0)
+
+    return {
+        **batch,
+        "StepNumber": step_number,
+        "cardPointList": list(points),
+        "mileage": mileage,
+        "runSteps": run_steps,
+        "speeds": speeds,
+        "strides": strides,
+        "times": times,
+    }
 
 
 def generate_run_data(
@@ -1383,7 +1422,7 @@ def generate_run_data(
         total_mileage,
         target_distance,
         rel_tol=0.0,
-        abs_tol=1e-6,   # 末点强制对齐 target，mileage 原生相减累加应精确等于 target
+        abs_tol=1e-6,   
     ):
         raise RuntimeError(
             f"批次里程合计错误: {total_mileage}/{target_distance} 米"
