@@ -5,6 +5,7 @@ import gzip
 import hashlib
 import json
 import logging
+import os
 import random
 import time
 import uuid as _uuid
@@ -18,11 +19,16 @@ from requests.adapters import HTTPAdapter
 from gmssl import func, sm2
 from gmssl.sm4 import SM4_DECRYPT, SM4_ENCRYPT, CryptSM4
 
-from track_gen import RunSplitPayload, generate_run_data
+from track_gen import (
+    CardPoint,
+    RunSplitPayload,
+    build_payload_from_card_points,
+    generate_run_data,
+)
 
 logger = logging.getLogger(__name__)
 
-VERSION: str = '3.6.6'
+VERSION: str = '3.6.7'
 DEVICE_MODELS: List[str] = [
     "vivo(V2366GA)", "vivo(V2415A)", "vivo(V2509A)",
     "Xiaomi(24129PN74C)", "Xiaomi(25019PNF3C)", "Xiaomi(25113PN0EC)",
@@ -319,7 +325,10 @@ async def get_home_run_info(school_url: str, uuid: str, device_name: str, token:
     r_data = content.get("data", {})
     cra_list = r_data.get("cralist", [])
     if not cra_list:
-        raise ValueError("cralist 为空，无法获取跑步活动信息")
+        raise ValueError(
+            f"cralist 为空，无法获取跑步活动信息"
+            f"（code={content.get('code')} msg={content.get('msg') or '无'}）"
+        )
     return cra_list
 
 
@@ -341,9 +350,19 @@ async def run_start(
         separators=(",", ":"),
     )
     content = await creat_request_async(url, parameter, uuid, device_name, token)
-    if not content or content.get("code") != 200:
+    if not isinstance(content, dict) or content.get("code") != 200:
+        server_msg = (
+            "接口请求失败" if not isinstance(content, dict)
+            else (content.get("msg") or "接口请求失败")
+        )
+        logger.warning(
+            "[run/start] 失败 -> code=%s msg=%s data=%s",
+            content.get("code") if isinstance(content, dict) else None,
+            server_msg,
+            content.get("data") if isinstance(content, dict) else None,
+        )
         return {"id": None, "recordStartTime": None, "ip": None,
-                "warnContent": "接口请求失败", "raId": None}
+                "warnContent": server_msg, "raId": None}
     info = content.get("data", {})
     return {
         k: info.get(k)
@@ -502,11 +521,37 @@ def build_finish_from_batches(
         "duration": str(total_time_s),
         "recordStartTime": record_start_time,
         "remake": "0|{}",
+        "extra": json.dumps(
+            {"shkScore": "0", "shkName": "{}", "devEnable": "0",
+             "rootEnable": "0", "emulatorName": ""},
+            separators=(",", ":"),
+        ),
     }
     if app_no_qualified_reason:  # 人脸抽查失败时真机会立即 finish 并携带该字段
         payload["appNoQualifiedReason"] = app_no_qualified_reason
     return payload
 
+
+
+def _face_capture_seconds(face_time) -> float:
+    """真机在抽查点会停在刷脸界面，faceTime 是服务端下发的识别窗口秒数（实测 60）。
+    取窗口内的一小段随机停留，封顶避免异常大值把快速模式拖死。"""
+    try:
+        window = float(face_time or 0)
+    except (TypeError, ValueError):
+        window = 0.0
+    if window <= 0:
+        return 0.0
+    lo = min(3.0, window * 0.5)
+    hi = max(lo, min(8.0, window * 0.2))
+    return round(random.uniform(lo, hi), 1)
+
+
+# 比对接口"没回 200"（现网实测会偶发 500「服务异常，请稍后重试！」）时最多再补发 2 次。
+# 真机从不重试，因为人就在镜头前、超时是真超时；我们没有真人，接口异常时不补发
+# 就等于把这单判死——补发只是把同一次抽查再报一次，不改里程也不改载荷形态。
+FACE_REQUEST_MAX = 3
+FACE_RETRY_WAIT_S = 2.0
 
 
 async def yun_run(
@@ -523,7 +568,13 @@ async def yun_run(
     fast: bool = False,
     preferred_ra_name: Optional[str] = None,
     face_image_path: Optional[str] = None,
+    face_image_paths: Optional[List[str]] = None,
 ) -> dict | None:
+    t0 = time.monotonic()
+    logger.info(
+        "[yun_run] ===== %s模式 target=%dm user=%s school=%s =====",
+        "快速" if fast else "慢速", target_distance, user, school_code,
+    )
     run_info = await get_home_run_info(
         school_url=school_url, uuid=uuid, device_name=device_name, token=token,
     )
@@ -552,33 +603,68 @@ async def yun_run(
 
     #刷脸
     face_data: Optional[str] = None
+    face_fp = "-"
     run_face_status = item.get("runFaceStatus", "") or ""
+    logger.info(
+        "[yun_run] 跑区=%s(id=%s) raType=%s runFaceStatus=%s 服务端打卡点=%d raDislikes=%d",
+        ra_name, run_area_id, ra_type, run_face_status or "-", len(card_points), ra_dislikes,
+    )
     if run_face_status == "Y":
-        if not face_image_path:
+        raw = [p for p in (face_image_paths or []) if p]
+        if not raw and face_image_path:
+            raw = [face_image_path]
+        paths = [p for p in raw if os.path.isfile(p)]
+        if not paths:
+            if raw:
+                raise ValueError(
+                    f"该任务需要刷脸(runFaceStatus=Y)，但 {len(raw)} 张人脸照片文件都不存在"
+                )
             raise ValueError(
                 "该任务需要刷脸(runFaceStatus=Y),必须提供 face_base64(人脸照片Base64)"
             )
-        face_data = file_to_base64(face_image_path)
+        def pick_face_data() -> str:
+            chosen = random.choice(paths)
+            logger.info("[yun_run] [人脸] 本次取 %s（本机共 %d 张）",
+                        os.path.basename(chosen), len(paths))
+            return file_to_base64(chosen)
+
+        face_data = pick_face_data()
+        face_fp = hashlib.md5(face_data.encode("ascii")).hexdigest()[:8]
+        logger.info("[yun_run] [人脸] 照片base64=%d字符 指纹=%s", len(face_data), face_fp)
         status = await start_face_run(
             school_url=school_url, uuid=uuid, token=token,
             ra_run_area=ra_run_area, device_name=device_name,
         )
+        logger.info("[yun_run] [人脸] getRlStatus(%s) -> %s", ra_run_area, status)
         if status == "N" or status == "N0":
-            await face_run_add_face(
+            add_res = await face_run_add_face(
                 school_url=school_url, uuid=uuid, token=token,
                 face_base_data=face_data, device_name=device_name,
             )
+            logger.info(
+                "[yun_run] [人脸] 录入照片 -> code=%s msg=%s",
+                add_res.get("code") if isinstance(add_res, dict) else None,
+                add_res.get("msg") if isinstance(add_res, dict) else None,
+            )
         elif status == "N1":
             raise ValueError("身份认证审核中,无法进行跑步")
+    elif face_image_path or face_image_paths:
+        logger.info("[yun_run] [人脸] 该跑区 runFaceStatus!=Y，本次携带的照片不会被使用")
 
     start_info = await run_start(
         school_url=school_url, uuid=uuid, token=token,
         ra_run_area=ra_run_area, ra_type=ra_type,
         run_area_id=run_area_id, device_name=device_name,
     )
+    logger.info("[yun_run] run/start 返回 %s", start_info)
     record_id = start_info["id"]
     record_start_time = start_info["recordStartTime"]
     ra_id = start_info["raId"]
+    if not record_id or not record_start_time:
+        raise ValueError(
+            f"run/start 未返回 recordId/开始时间，无法开始跑步"
+            f"（{start_info.get('warnContent') or '服务端 data 缺字段'}）"
+        )
     #写到这我的脑海里就想起了 3 2 1 开始跑步 然后
     start_epoch = int(
         datetime.strptime(record_start_time, "%Y-%m-%d %H:%M:%S")
@@ -604,25 +690,36 @@ async def yun_run(
     # randomList 抽查点为公里数，累计里程越过时触发（真机 SportRunMapActivity.W1 判断 window*1000 与米数）
     pending_checks = sorted(float(t) for t in random_list) if random_list else []
     check_idx = 0
+    last_check_ts = 0.0
     total = len(generate_run_data_list)
+    plan_seconds = sum(int(p["times"]) for p in generate_run_data_list)
+    logger.info(
+        "[yun_run] 轨迹已生成 %d批 覆盖%dm 真实总时长=%ds(%.1fmin) 抽查点=%s 每批等待=%s",
+        total, target_distance, plan_seconds, plan_seconds / 60.0,
+        [f"{c}km" for c in pending_checks] or "无",
+        "固定0.05s+抽查停留(快速)" if fast else "该批真实秒数(慢速)",
+    )
 
     async def finalize(batches: list[RunSplitPayload], reason: Optional[str]) -> dict:
-        manage_point = json.dumps(
-            build_finish_from_batches(
-                batches=batches,
-                ra_id=ra_id,
-                ra_run_area=ra_run_area,
-                device_name=device_name,
-                ra_type=ra_type,
-                record_id=record_id,
-                record_start_time=record_start_time,
-                card_points=card_points,
-                ra_dislikes=ra_dislikes,
-                app_no_qualified_reason=reason,
-            ),
-            ensure_ascii=False,
-            separators=(",", ":"),
+        payload = build_finish_from_batches(
+            batches=batches,
+            ra_id=ra_id,
+            ra_run_area=ra_run_area,
+            device_name=device_name,
+            ra_type=ra_type,
+            record_id=record_id,
+            record_start_time=record_start_time,
+            card_points=card_points,
+            ra_dislikes=ra_dislikes,
+            app_no_qualified_reason=reason,
         )
+        logger.info(
+            "[yun_run] [提交] 上报包数=%d(轨迹共%d批) 里程=%skm 时长=%ss 步频=%s 配速=%s 打卡点=%s 不合格原因=%s",
+            len(batches), total, payload["recordMileage"], payload["duration"],
+            payload["recodeCadence"], payload["recodePace"],
+            payload["recodeDislikes"], reason or "无",
+        )
+        manage_point = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         await is_standard(
             school_url=school_url, uuid=uuid, token=token,
             device_name=device_name, generate_data=manage_point,
@@ -631,38 +728,163 @@ async def yun_run(
             school_url=school_url, token=token, generate_data=manage_point,
             uuid=uuid, device_name=device_name,
         )
-        return {"msg": msg, "start_time": record_start_time}
+        logger.info(
+            "[yun_run] [提交] isStandard+finish 已发送 -> %s 全程墙钟=%.1fs 人脸比对=%d次",
+            msg, time.monotonic() - t0, checks_done,
+        )
+        # 服务端 finish 的 msg 才是权威判定：我们没填原因(例如刷脸接口异常但跑完了)
+        # 不等于成绩合格；认不出的返回一律按未通过处理，绝不把失败当成功。
+        verdict = msg or ""
+        if reason is not None:
+            qualified, final_reason = False, reason
+        elif "不合格" in verdict:
+            qualified, final_reason = False, f"服务端判定不合格：{verdict}"
+        elif "合格" in verdict:
+            qualified, final_reason = True, None
+        else:
+            qualified, final_reason = False, f"服务端返回无法识别，按未通过处理：{verdict}"
+        return {"msg": msg, "start_time": record_start_time,
+                "qualified": qualified, "reason": final_reason}
 
-    for i, y_point in enumerate(generate_run_data_list, start=1):
-        sleep_sec = 0.05 if fast else int(y_point["times"])
-        await asyncio.sleep(sleep_sec)
-        cum_mileage_m = float(y_point["cardPointList"][-1]["runMileage"])
-        while (
-            face_data is not None
-            and check_idx < len(pending_checks)
-            and cum_mileage_m >= pending_checks[check_idx] * 1000
-        ):
-            res = await face_run_compare_face(
-                school_url=school_url, uuid=uuid, token=token,
-                face_base_data=face_data, record_id=record_id, device_name=device_name,
+    # 抽查比对要贴着"越过的GPS点"发生，但上报边界原本是整批推进的：一批可达数百米，
+    # 落在首批的抽查点(如 0.2km)会在服务端 record 里程仍为 0 时发起比对。
+    # 所以这里改成按点上报：每个抽查点前先把(上一个已上报点, 越过点]这段发出去，
+    # 本批剩余的点在批末补发。reported 记录真正发出去的包，finish 只按它构造。
+    # 真机另有两条 UI 副作用不复刻：刷脸期间(W1 的 F1 分支)被越过的窗口会永久跳过、
+    # 同一采样帧内的多个窗口只触发最后一个。这里逐个触发——少发一次比对才有风险。
+    last_reported_pt: Optional[CardPoint] = None
+    sent_upto = 0
+    reported: List[RunSplitPayload] = []
+
+    async def report_through(y_point: RunSplitPayload, end_idx: int) -> None:
+        nonlocal sent_upto, last_reported_pt
+        points = y_point["cardPointList"]
+        if sent_upto == 0 and end_idx == len(points) - 1:
+            sub = y_point  # 整批未拆，原样发出，不重新推导聚合字段
+        else:
+            sub = build_payload_from_card_points(
+                batch=y_point,
+                points=points[sent_upto: end_idx + 1],
+                previous_last_point=last_reported_pt,
             )
-            if not res or res.get("data", {}).get("status") != "Y":
-                # 真机行为：比对失败立即以已提交里程 finish 并带失败原因，而非弃跑
-                reason = f"人脸识别对比失败(抽查点 {pending_checks[check_idx]}km)"
-                logger.warning("[yun_run] %s msg=%s", reason, res and res.get("msg"))
-                sent = generate_run_data_list[: i - 1]
-                if not sent:
-                    raise ValueError(f"{reason}，且里程不足无法提交")
-                return await finalize(sent, reason)
-            check_idx += 1
-
+        if sub is None:
+            return
         await split_point_cheating(
-            school_url=school_url, token=token, y_point=y_point,
+            school_url=school_url, token=token, y_point=sub,
             uuid=uuid, device_name=device_name,
         )
+        reported.append(sub)
+        sent_upto = end_idx + 1
+        last_reported_pt = points[end_idx]
+
+    checks_done = 0
+    for i, y_point in enumerate(generate_run_data_list, start=1):
+        batch_seconds = int(y_point["times"])
+        points = y_point["cardPointList"]
+        last_pt = points[-1]
+        cum_mileage_m = float(last_pt["runMileage"])
+        sent_upto = 0
+
+        # 在本批的点里定位抽查点的越过时刻：真机按每 2s 一个 GPS 点判断，
+        # 只看批末点会整整晚一批（一批可达数百米）
+        due_checks: list[Tuple[float, int, int]] = []
+        if face_data is not None:
+            base_t = int(last_reported_pt["runTime"]) if last_reported_pt else 0
+            while check_idx < len(pending_checks):
+                target_km = pending_checks[check_idx]
+                hit = next(
+                    (
+                        (n, p) for n, p in enumerate(points)
+                        if float(p["runMileage"]) >= target_km * 1000
+                    ),
+                    None,
+                )
+                if hit is None:
+                    break
+                hit_idx = hit[0]
+                due_checks.append(
+                    (target_km, max(0, int(hit[1]["runTime"]) - base_t), hit_idx)
+                )
+                check_idx += 1
+
+        logger.info(
+            "[yun_run] 批%d/%d 真实%ds 批末累计%.1fm/%ds/%d步 本批抽查点=%s 墙钟%.1fs",
+            i, total, batch_seconds, cum_mileage_m, int(last_pt["runTime"]),
+            int(last_pt["runStep"]),
+            [f"{km}km@{off}s" for km, off, _ in due_checks] or "无",
+            time.monotonic() - t0,
+        )
+
+        waited_s = 0.0
+        for target_km, offset_s, hit_idx in due_checks:
+            gap_s = max(0, offset_s - waited_s)
+            if not fast:
+                await asyncio.sleep(gap_s)
+            await report_through(y_point, hit_idx)
+            due_ts = time.monotonic()
+            capture_s = _face_capture_seconds(face_time)
+            await asyncio.sleep(capture_s)
+            if not fast:
+                waited_s += gap_s + capture_s
+            face_b64 = pick_face_data()
+            face_fp = hashlib.md5(face_b64.encode("ascii")).hexdigest()[:8]
+            now_ts = time.monotonic()
+            logger.info(
+                "[yun_run] [人脸] 越过抽查点%.2fkm(批%d第%ds处 已补报至批内第%d点%.1fm 窗口%ss 停留%.1fs) -> 第%d次比对(指纹=%s 距上次%.1fs)",
+                target_km, i, offset_s, hit_idx + 1,
+                float(points[hit_idx]["runMileage"]), face_time, capture_s,
+                checks_done + 1, face_fp,
+                now_ts - last_check_ts if last_check_ts else 0.0,
+            )
+            last_check_ts = now_ts
+            for attempt in range(1, FACE_REQUEST_MAX + 1):
+                res = await face_run_compare_face(
+                    school_url=school_url, uuid=uuid, token=token,
+                    face_base_data=face_b64, record_id=record_id, device_name=device_name,
+                )
+                code = res.get("code") if isinstance(res, dict) else None
+                # 服务端错误响应里 data 常常是 null（不是缺键），直接 .get 会炸
+                face_data_out = res.get("data") if isinstance(res, dict) else None
+                status = face_data_out.get("status") if isinstance(face_data_out, dict) else None
+                logger.info(
+                    "[yun_run] [人脸] 第%d次比对(第%d/%d发)返回 -> status=%s code=%s msg=%s 本次请求%.1fs",
+                    checks_done + 1, attempt, FACE_REQUEST_MAX, status, code,
+                    res.get("msg") if isinstance(res, dict) else None,
+                    time.monotonic() - now_ts,
+                )
+                # status=N 是真不通过，绝不补发；只有"没回 200"才再发一次
+                if status == "Y" or code == 200 or attempt == FACE_REQUEST_MAX:
+                    break
+                # 窗口判定要在"下一次发出"之前：只有补发仍落在 faceTime 内才发
+                if face_time and (time.monotonic() - due_ts) + FACE_RETRY_WAIT_S >= face_time:
+                    logger.warning(
+                        "[yun_run] [人脸] 比对连续异常且识别窗口 %ss 将用尽，停止补发", face_time)
+                    break
+                await asyncio.sleep(FACE_RETRY_WAIT_S)
+            raw = json.dumps(res, ensure_ascii=False)[:800] if res else None
+            if code != 200:
+                # 补发用尽仍是接口异常：按真机 Q2 只记账不中止——跑完全程、
+                # finish 不带 appNoQualifiedReason，成绩交给服务端判
+                logger.warning(
+                    "[yun_run] [人脸] 第%d次比对接口异常(抽查点%.2fkm 共%d发)，继续跑完 完整响应=%s",
+                    checks_done + 1, target_km, attempt, raw,
+                )
+            elif status != "Y":
+                # 真机行为：比对不通过立即以已提交里程 finish 并带失败原因，而非弃跑
+                reason = f"人脸识别对比失败(抽查点 {target_km}km)"
+                logger.warning("[yun_run] %s 完整响应=%s", reason, raw)
+                if not reported:
+                    raise ValueError(f"{reason}，且服务端还没有任何已上报里程")
+                return await finalize(reported, reason)
+            checks_done += 1
+
+        tail_s = max(0, batch_seconds - waited_s)
+        await asyncio.sleep(0.05 if fast else tail_s)
+
+        await report_through(y_point, len(points) - 1)
 
         if i == total:
-            return await finalize(generate_run_data_list, None)
+            return await finalize(reported, None)
     return None
 
 async def have_yd_info(school_url: str, token: str, uuid: str, device_name: str):
