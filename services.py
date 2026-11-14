@@ -10,6 +10,7 @@ import os
 import random
 import re
 import string
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -45,9 +46,15 @@ _running_users: set[str] = set()  # 仅防同一账号重复提交，单事件�
 
 
 
-_school_cache: dict[str, dict] = {}  
+_school_cache: dict[str, dict] = {}
 _cache_loaded: bool = False
 _cache_lock = asyncio.Lock()
+_cache_last_refresh: str = ""
+_cache_last_error: str = ""
+_cache_summary: str = ""
+_cache_last_diff: dict = {}
+SCHOOL_REFRESH_MIN_INTERVAL_S = 15
+_refresh_last_mono: float = -1e9
 
 # 学校列表服务不可用时的兜底，保证核心学校仍可登录
 _FALLBACK_SCHOOLS: dict[str, dict] = {
@@ -55,12 +62,52 @@ _FALLBACK_SCHOOLS: dict[str, dict] = {
 }
 
 
-async def refresh_school_cache():
-    """刷新学校内存缓存，启动时和定时任务调用。"""
-    global _school_cache, _cache_loaded
+def _now_str() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _diff_school_cache(old: dict, new: dict) -> dict:
+    """比出新增/下线/地址变更，只用于提示与日志，不据此改任何本机数据。"""
+    added = sorted(set(new) - set(old))
+    removed = sorted(set(old) - set(new))
+    moved = sorted(c for c in set(old) & set(new) if old[c]["schoolUrl"] != new[c]["schoolUrl"])
+    if not old:
+        summary = f"；首次装载 {len(new)} 所"
+    else:
+        parts = []
+        if added:
+            parts.append(f"新增 {len(added)} 所")
+        if removed:
+            parts.append(f"下线 {len(removed)} 所")
+        if moved:
+            parts.append(f"地址变更 {len(moved)} 所")
+            for c in moved[:10]:
+                logger.warning("[cache] 学校 %s 地址变更 %s → %s", c, old[c]["schoolUrl"], new[c]["schoolUrl"])
+        summary = ("；" + "，".join(parts)) if parts else "；无变化"
+    return {"added": added, "removed": removed, "moved": moved, "summary": summary}
+
+
+async def refresh_school_cache(force: bool = False) -> dict:
+    """刷新学校内存缓存，返回本次变更摘要 {added, removed, moved, skipped, summary}。
+    """
+    global _school_cache, _cache_loaded, _cache_last_refresh, _cache_last_error
+    global _cache_summary, _cache_last_diff, _refresh_last_mono
+
+    now = time.monotonic()
+    if not force and now - _refresh_last_mono < SCHOOL_REFRESH_MIN_INTERVAL_S:
+        return {"skipped": True, "throttled": True, "kept": len(_school_cache),
+                "added": [], "removed": [], "moved": [], "summary": _cache_summary}
+    _refresh_last_mono = now
+
     temp_uuid = gen_device_id()
     device_name = have_device_name()
     schools = await list_schools(uuid=temp_uuid, device_name=device_name)
+    if not schools:
+        _cache_last_error = _now_str() + " 上游返回空列表，已保留旧缓存"
+        logger.warning("[cache] 学校列表返回空，跳过本轮覆盖（当前仍用 %d 所）", len(_school_cache))
+        return {"skipped": True, "kept": len(_school_cache),
+                "added": [], "removed": [], "moved": [], "summary": _cache_summary}
+
     async with _cache_lock:
         online = {
             s["schoolCode"]: {
@@ -69,10 +116,37 @@ async def refresh_school_cache():
             }
             for s in schools if s.get("schoolUrl")
         }
-        # 在线列表拿不到时用内置学校，保证核心学校仍可登录
-        _school_cache = {**_FALLBACK_SCHOOLS, **online}
+        if not online:
+            _cache_last_error = _now_str() + " 上游列表里没有任何带 schoolUrl 的记录，已保留旧缓存"
+            logger.warning("[cache] %s（当前仍用 %d 所）", _cache_last_error, len(_school_cache))
+            return {"skipped": True, "kept": len(_school_cache),
+                    "added": [], "removed": [], "moved": [], "summary": _cache_summary}
+
+        new_cache = {**_FALLBACK_SCHOOLS, **online}
+        diff = _diff_school_cache(_school_cache, new_cache)
+        _school_cache = new_cache
         _cache_loaded = True
-    logger.info("[cache] 学校缓存刷新完成，共 %d 所（在线 %d 所）", len(_school_cache), len(online))
+        _cache_last_refresh = _now_str()
+        _cache_last_error = ""
+        _cache_summary = diff["summary"]
+        _cache_last_diff = diff
+    logger.info("[cache] 学校缓存刷新完成，共 %d 所（在线 %d 所）%s",
+                len(_school_cache), len(online), diff["summary"])
+    return diff
+
+
+def school_cache_status() -> dict:
+    return {
+        "count": len(_school_cache),
+        "loaded": _cache_loaded,
+        "last_refresh": _cache_last_refresh,
+        "last_error": _cache_last_error,
+        "summary": _cache_summary,
+        "moved": list(_cache_last_diff.get("moved") or []),
+        "added": list(_cache_last_diff.get("added") or []),
+        "removed": list(_cache_last_diff.get("removed") or []),
+        "refresh_seconds": SCHOOL_REFRESH_MIN_INTERVAL_S,
+    }
 
 
 def get_school_info(school_code: str) -> dict | None:
@@ -106,7 +180,7 @@ from upstream import (
 
 async def startup():
     # 学校列表只保存在内存；但轨迹仍从 data/tracks 目录读取
-    await refresh_school_cache()
+    await refresh_school_cache(force=True)
 
 
 async def shutdown():
@@ -202,8 +276,8 @@ async def api_login(req: LoginRequest):
     logger.info("[/login] user=%s school_code=%s", req.user, req.school_code)
 
     school_info = get_school_info(req.school_code)
-    if not school_info and not _cache_loaded:
-        await refresh_school_cache()
+    if not school_info:
+        await refresh_school_cache(force=True)
         school_info = get_school_info(req.school_code)
     if not school_info:
         raise AppError(f"学校编码 {req.school_code} 不存在")
@@ -243,17 +317,17 @@ async def api_login(req: LoginRequest):
 
 
 async def api_list_schools():
-    """返回所有可用学校名称列表。"""
-    if not _cache_loaded:
-        await refresh_school_cache()
-    return {"schools": get_all_school_names()}
+    """返回所有可用学校名称列表。每次调用都试着刷一遍（内部有节流），
+    所以"点开学校下拉"本身就是刷新时机。"""
+    await refresh_school_cache()
+    return {"schools": get_all_school_names(), "cache": school_cache_status()}
 
 
 async def resolve_school_url(school_code: str) -> str:
     """根据学校编码在内存缓存中解析学校接口地址。"""
     school_info = get_school_info(school_code)
-    if not school_info and not _cache_loaded:
-        await refresh_school_cache()
+    if not school_info:
+        await refresh_school_cache(force=True)
         school_info = get_school_info(school_code)
     if not school_info:
         raise AppError(f"学校编码 {school_code} 不存在")
@@ -262,10 +336,19 @@ async def resolve_school_url(school_code: str) -> str:
 
 async def _do_yun_run(task_id: str, user: str, kwargs: dict):
     """后台任务：执行一次跑步提交，全程 await。"""
+    logger.info(
+        "[/yun_run] 慢速后台任务启动 task_id=%s 目标=%dm 人脸=%s",
+        task_id, kwargs.get("target_distance"),
+        "有" if kwargs.get("face_image_path") else "无",
+    )
     await _mark_task(task_id, "running", _json.dumps(kwargs, ensure_ascii=False))
     try:
         result = await yun_run(**kwargs)
-        status, result_str = "done", str(result)
+        # 没抛异常不代表成绩合格：finish 判不合格、或返回认不出来的，都记 failed
+        if isinstance(result, dict) and not result.get("qualified", True):
+            status, result_str = "failed", f"本次成绩不合格：{result.get('reason')}"
+        else:
+            status, result_str = "done", str(result)
     except AppError as e:
         status, result_str = "failed", e.detail
     except Exception as e:
@@ -278,14 +361,19 @@ async def _do_yun_run(task_id: str, user: str, kwargs: dict):
             import os
             if os.path.exists(temp_face_path):
                 os.remove(temp_face_path)
+                logger.info("[/yun_run] 慢速: 临时人脸照片已删除 task_id=%s", task_id)
 
     await _mark_task(task_id, status, result_str)
-    logger.info("[/yun_run] task_id=%s status=%s", task_id, status)
+    logger.info("[/yun_run] task_id=%s status=%s result=%s", task_id, status, result_str)
 
 
 async def api_yun_run(req: YunRunRequest):
     start = datetime.now()
-    logger.info("[/yun_run] user=%s target=%s fast=%s", req.user, req.target_distance, req.fast)
+    logger.info(
+        "[/yun_run] user=%s target=%s 模式=%s 人脸照片=%s",
+        req.user, req.target_distance, "快速" if req.fast else "慢速",
+        f"{len(req.face_base64)}字符base64" if req.face_base64 else "未携带",
+    )
 
     if req.target_distance > 4500:
         raise AppError("target_distance 不能超过 4500")
@@ -309,11 +397,14 @@ async def api_yun_run(req: YunRunRequest):
         kwargs["cadence_range_spm"] = tuple(req.cadence_range_spm)
     if req.fast is not None:
         kwargs["fast"] = req.fast
-    # 人脸照片路径
     face_image_path = None
     if req.face_base64:
         face_image_path = _resolve_face_file(req.user, None, req.face_base64, None, persist=False)
         kwargs["face_image_path"] = face_image_path
+    else:
+        pool = _face_pool()
+        if pool:
+            kwargs["face_image_paths"] = pool
 
     if req.user in _running_users:
         raise AppError("该账号当前正在跑步，请稍后再试")
@@ -322,13 +413,18 @@ async def api_yun_run(req: YunRunRequest):
         _running_users.add(req.user)
         try:
             result = await yun_run(**kwargs)
+        except Exception as e:
+            logger.exception("[/yun_run] 快速模式失败 耗时=%.2fs err=%s",
+                             (datetime.now() - start).total_seconds(), e)
+            raise
         finally:
             _running_users.discard(req.user)
             if face_image_path:
                 import os
                 if os.path.exists(face_image_path):
                     os.remove(face_image_path)
-        logger.info("[/yun_run] fast完成 耗时=%.2fs", (datetime.now() - start).total_seconds())
+                    logger.info("[/yun_run] 快速: 临时人脸照片已删除")
+        logger.info("[/yun_run] 快速完成 耗时=%.2fs", (datetime.now() - start).total_seconds())
         return {"result": result}
     else:
         task_id = str(uuid.uuid4())
@@ -396,6 +492,14 @@ async def api_run_record_detail(req: RunRecordDetailRequest):
         raise AppError(msg or "获取记录详情失败")
     logger.info("[/run_record_detail] 完成 耗时=%.2fs", (datetime.now() - start).total_seconds())
     return content
+
+
+def _face_pool() -> list[str]:
+    """本机照片池：就是「设置」里管的那批图，只读不删。"""
+    faces_dir = Path(__file__).resolve().parent / "data" / "faces"
+    if not faces_dir.is_dir():
+        return []
+    return [str(p) for p in sorted(faces_dir.glob("*.jpg"), key=lambda x: x.name)]
 
 
 def _resolve_face_file(user: str, school_id, face_base64, face_image_path, persist: bool) -> str:
