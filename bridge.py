@@ -5,16 +5,40 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import re
 import threading
 import time
 from pathlib import Path
 
 import api
+import face_check
 import services
 import takeover
+import upstream
 from services import AppError
 
 FACES_DIR = Path(__file__).resolve().parent / "data" / "faces"
+
+VERSION_BASELINE: str = upstream.VERSION
+_VERSION_RE = re.compile(r"^\d+\.\d+(?:\.\d+)?$")
+
+_SESSION_CODE: str = ""
+_SESSION_STALE: str = ""
+
+
+def _note_school_change(cache: dict | None) -> None:
+    global _SESSION_STALE
+    if not isinstance(cache, dict) or not _SESSION_CODE:
+        return
+    if _SESSION_CODE in (cache.get("moved") or []):
+        _SESSION_STALE = f"学校 {_SESSION_CODE} 的接口地址已变更"
+        services.logger.warning("[bridge] %s", _SESSION_STALE)
+
+
+def _clear_school_stale(code: str) -> None:
+    global _SESSION_CODE, _SESSION_STALE
+    _SESSION_CODE = code or ""
+    _SESSION_STALE = ""
 
 _LOOP = asyncio.new_event_loop()
 _READY = threading.Event()
@@ -72,10 +96,41 @@ class Bridge:
 
 
     def status(self, payload=None):
-        return self._call(api.status())
+        d = self._call(api.status())
+        if isinstance(d, dict):
+            d["cache"] = services.school_cache_status()
+            d["stale"] = _SESSION_STALE
+            d["version"] = upstream.VERSION
+        return d
 
     def schools(self, payload=None):
-        return self._call(api.schools())
+        d = self._call(api.schools())
+        if isinstance(d, dict):
+            _note_school_change(d.get("cache"))
+            d["stale"] = _SESSION_STALE
+        return d
+
+    def set_app_version(self, payload=None):
+        p = self._payload(payload)
+        v = str(p.get("version", "")).strip().lstrip("vV")
+        if not v:
+            old, upstream.VERSION = upstream.VERSION, VERSION_BASELINE
+            services.logger.info("[version] 上报版本恢复内置基线 %s（原 %s）", VERSION_BASELINE, old)
+            return {"version": VERSION_BASELINE, "warning": ""}
+        if not _VERSION_RE.match(v):
+            return self._err(f"版本号格式不对，应形如 3.6.7（收到 {v!r}）")
+        old = upstream.VERSION
+        upstream.VERSION = v
+        services.logger.warning("[version] 上报版本 %s → %s（来源: 设置页手改）", old, v)
+        warning = ""
+        if v.split(".")[0] != VERSION_BASELINE.split(".")[0]:
+            warning = (f"与内置基线 {VERSION_BASELINE} 不同大版本，协议可能一起变了；"
+                       f"跑不通就点「恢复默认」")
+        return {"version": v, "previous": old, "warning": warning}
+
+    def device_models(self, payload=None):
+        """内置机型列表：登录页的设备下拉用它，前端不另抄一份。"""
+        return {"models": list(upstream.DEVICE_MODELS), "version": upstream.VERSION}
 
 
     def login(self, payload=None):
@@ -84,7 +139,10 @@ class Bridge:
             req = api.LoginRequest(**p)
         except Exception as e:
             return self._err(f"登录参数错误: {e}")
-        return self._call(api.login(req))
+        d = self._call(api.login(req))
+        if isinstance(d, dict) and d.get("token"):
+            _clear_school_stale(str(d.get("school_code") or req.school_code))
+        return d
 
     def sport_info(self, payload=None):
         p = self._payload(payload)
@@ -140,7 +198,11 @@ class Bridge:
 
     def resume(self, payload=None):
         p = self._payload(payload)
-        return self._call(api.resume(str(p.get("school_code", "")), p.get("run_areas") or []))
+        code = str(p.get("school_code", ""))
+        d = self._call(api.resume(code, p.get("run_areas") or []))
+        if isinstance(d, dict) and not d.get("__error"):
+            _clear_school_stale(str(d.get("school_code") or code))
+        return d
 
     def track_query(self, payload=None):
         p = self._payload(payload)
@@ -186,10 +248,13 @@ class Bridge:
             raw = base64.b64decode(b64)
         except Exception:
             return self._err("照片数据无法解析")
+        check = face_check.validate(raw)
+        if not check["ok"]:
+            return self._err("；".join(check["errors"]))
         FACES_DIR.mkdir(parents=True, exist_ok=True)
         name = f"face_{int(time.time() * 1000)}.jpg"
         (FACES_DIR / name).write_bytes(raw)
-        return {"name": name}
+        return {"name": name, "warning": check["warning"]}
 
     def face_delete(self, payload=None):
         p = self._payload(payload)
