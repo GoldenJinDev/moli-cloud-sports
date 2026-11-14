@@ -144,7 +144,11 @@ class Client:
                   face_jpg: str | pathlib.Path | None = None,
                   pace: Sequence[float] | None = None,
                   cadence: Sequence[float] | None = None) -> dict:
-        """提交一次跑步。fast=True 同步跑完，否则返回 {"task_id": ...} 需再 wait()。"""
+        """提交一次跑步。fast=True 同步跑完，否则返回 {"task_id": ...} 需再 wait()。
+
+        face_jpg 给了就全程用那一张；不给时若跑区需要刷脸，会自动用本机 data/faces
+        里的照片，每个抽查点各随机取一张（与界面行为一致）。
+        """
         named = [a for a in self.run_areas if a]
         req = YunRunRequest(
             user=self.user, **self._ids,
